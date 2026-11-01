@@ -97,7 +97,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.staffCard}
-          onPress={() => router.push('/admin')}
+          onPress={() => router.push('/staff-login')}
         >
           <View style={styles.cardCopy}>
             <Text style={styles.staffLabel}>STAFF</Text>

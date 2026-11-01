@@ -7,8 +7,17 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useStaffAuth } from '../contexts/staff-auth-context';
 
 export default function AdminScreen() {
+  const { error, isLoading, signOut } = useStaffAuth();
+
+  const handleSignOut = () => {
+    void signOut().then((signedOut) => {
+      if (signedOut) router.replace('/');
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -164,6 +173,18 @@ export default function AdminScreen() {
           <IntegrationRow text="Ghost gate controls" />
           <IntegrationRow text="Online customer payments" />
         </View>
+
+        {error ? <Text style={styles.authError}>{error}</Text> : null}
+
+        <TouchableOpacity
+          disabled={isLoading}
+          onPress={handleSignOut}
+          style={[styles.signOutButton, isLoading && styles.disabledButton]}
+        >
+          <Text style={styles.signOutText}>
+            {isLoading ? 'SIGNING OUT...' : 'SIGN OUT'}
+          </Text>
+        </TouchableOpacity>
 
         <View style={styles.footer}>
           <Text style={styles.footerTitle}>WHITE OAK RANCH</Text>
@@ -431,6 +452,35 @@ const styles = StyleSheet.create({
   integrationText: {
     color: '#D6DDD7',
     fontSize: 13,
+  },
+
+  authError: {
+    color: '#A13D35',
+    fontSize: 13,
+    lineHeight: 19,
+    marginHorizontal: 22,
+    marginTop: 14,
+  },
+
+  signOutButton: {
+    alignItems: 'center',
+    borderColor: '#C9B88F',
+    borderRadius: 13,
+    borderWidth: 1,
+    marginHorizontal: 18,
+    marginTop: 16,
+    paddingVertical: 14,
+  },
+
+  signOutText: {
+    color: '#203B2A',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+
+  disabledButton: {
+    opacity: 0.55,
   },
 
   footer: {
