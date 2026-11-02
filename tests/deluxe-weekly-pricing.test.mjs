@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { calculateStayPricing, RANCH_CONFIG } from '../src/data/ranchConfig.ts';
-import { canSaveLiveReservationPricing } from '../src/data/liveReservationPricing.ts';
+import { calculateLiveStayPricing, canSaveLiveReservationPricing } from '../src/data/liveReservationPricing.ts';
 import { LIVE_WEEKLY_RESERVATION_PRICING_ENABLED } from '../src/constants/feature-flags.ts';
 
 for (const [nights, weeklyBlocks, remainingNights, total] of [
@@ -46,6 +46,18 @@ test('non-Deluxe and non-RV rates remain configured as before', () => {
   assert.equal(calculateStayPricing({ stayType: 'Tent Site', nights: 7 }).total, 175);
   assert.equal(calculateStayPricing({ stayType: 'Small Rental RV', nights: 7 }).total, 525);
   assert.equal(calculateStayPricing({ stayType: 'Large Rental RV', nights: 7 }).total, 693);
+});
+
+test('live non-Deluxe RV stays use nightly totals while configured weekly offers stay demo-only', () => {
+  const parking = calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Parking Only', nights: 7 });
+  const electric = calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Electric + Water', nights: 8, atvAccess: true });
+  assert.equal(parking.weeklyBlocks, 0);
+  assert.equal(parking.total, 175);
+  assert.equal(electric.weeklyBlocks, 0);
+  assert.equal(electric.remainingNightlyTotal, 320);
+  assert.equal(electric.atvTotal, 75);
+  assert.equal(electric.total, 395);
+  assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights: 14 }).total, 400);
 });
 
 test('weekly live writes stay gated, including non-Deluxe rates', () => {

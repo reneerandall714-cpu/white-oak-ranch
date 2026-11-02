@@ -1,4 +1,5 @@
 import type { StaffReservationDraft } from './reservation-repository';
+import type { ReservationStatus } from '../data/reservationdata';
 
 export type ReservationAccessError =
   | 'session_expired'
@@ -12,6 +13,7 @@ export type ReservationSaveError =
   | 'unit_unavailable'
   | 'pricing_unavailable'
   | 'invalid_draft'
+  | 'stale'
   | 'validation';
 
 type RequestError = { code?: string; message?: string };
@@ -38,6 +40,7 @@ export function mapReservationSaveError(error: RequestError, status: number): Re
     error.code === '23514' ||
     error.code === '22007' ||
     error.code === '22008' ||
+    error.code === '22003' ||
     error.code === '22P02' ||
     error.code === 'PGRST204'
   ) {
@@ -62,4 +65,13 @@ export function buildReservationInsert(draft: StaffReservationDraft) {
     total: draft.total,
     status: 'CONFIRMED',
   };
+}
+
+export function buildReservationUpdate(draft: StaffReservationDraft) {
+  const { status: _status, ...editableFields } = buildReservationInsert(draft);
+  return editableFields;
+}
+
+export function canManageReservation(status: ReservationStatus): boolean {
+  return status === 'PENDING' || status === 'CONFIRMED';
 }

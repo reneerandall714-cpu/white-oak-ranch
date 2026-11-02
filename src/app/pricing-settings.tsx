@@ -22,9 +22,9 @@ export default function PricingSettingsScreen() {
   const [saved, setSaved] = useState(false);
 
   const rvRates: RateItem[] = [
-    { id: '1', label: 'Parking Only', value: `$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights` },
-    { id: '2', label: 'Electric + Water', value: `$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights` },
-    { id: '3', label: 'Full Hookup (Deluxe service)', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights` },
+    { id: '1', label: 'Parking Only', value: `$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights (demo-only; live uses nightly)` },
+    { id: '2', label: 'Electric + Water', value: `$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights (demo-only; live uses nightly)` },
+    { id: '3', label: 'Full Hookup (Deluxe service)', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights (live supported)` },
     { id: '4', label: 'Deluxe + Wi-Fi', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: 'Same verified Deluxe service' },
   ];
 

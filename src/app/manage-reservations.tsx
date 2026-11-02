@@ -1,7 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +19,7 @@ import {
   listStaffReservations,
   type ReservationRepositoryError,
 } from '../repositories/reservation-repository';
+import { canManageReservation } from '../repositories/reservation-request';
 
 const LIVE_ERROR_MESSAGES: Record<ReservationRepositoryError, string> = {
   session_expired: 'Your staff session has expired. Sign in again to view live reservations.',
@@ -126,7 +126,7 @@ export default function ReservationsScreen() {
             <Text style={styles.eyebrow}>WHITE OAK RANCH</Text>
             <Text style={styles.title}>Live Staff Reservations</Text>
             <Text style={styles.subtitle}>
-              Supabase read-only • staff access required
+              Supabase staff data • active staff access required
             </Text>
           </View>
         </View>
@@ -294,6 +294,8 @@ export default function ReservationsScreen() {
   guests={reservation.guests}
   atvAccess={reservation.atvAccess}
   total={reservation.total}
+  onOpen={LIVE_RESERVATIONS_ENABLED ? () => router.push({ pathname: '/staff-reservation-detail', params: { id: reservation.id } }) : undefined}
+  onCancel={LIVE_RESERVATIONS_ENABLED && canManageReservation(reservation.status) ? () => router.push({ pathname: '/staff-reservation-detail', params: { id: reservation.id, intent: 'cancel' } }) : undefined}
 />
           ))
         )}
@@ -306,19 +308,19 @@ export default function ReservationsScreen() {
 
           <ServiceRow
             title="Parking Only"
-            price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night • $${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights`}
+            price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night live • $${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights demo only`}
             description="RV site without utility hookups"
           />
 
           <ServiceRow
             title="Electric + Water"
-            price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night • $${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights`}
+            price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night live • $${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights demo only`}
             description="Electric and water access"
           />
 
           <ServiceRow
             title="Deluxe (Full Hookup)"
-            price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night • $${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights`}
+            price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night live • $${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights live`}
             description="Water, electric, septic & high-speed internet"
           />
 
@@ -333,11 +335,11 @@ export default function ReservationsScreen() {
         <View style={styles.futureCard}>
           <Text style={styles.futureLabel}>STAFF RESERVATIONS</Text>
           <Text style={styles.futureTitle}>
-            Live listing and staff creation are connected.
+            Live listing, staff creation, and reservation management are connected.
           </Text>
 
           <Text style={styles.futureText}>
-            Staff can create live reservations with checked availability and
+            Staff can create and manage live reservations with checked availability and
             database-enforced pricing. Customer booking and the separate demo
             reservation flow remain unchanged.
           </Text>
@@ -450,6 +452,8 @@ function ReservationCard({
   guests,
   atvAccess,
   total,
+  onOpen,
+  onCancel,
 }: {
   guest: string;
   dates: string;
@@ -460,28 +464,11 @@ function ReservationCard({
   guests?: number;
   atvAccess?: boolean;
   total?: number;
+  onOpen?: () => void;
+  onCancel?: () => void;
 }) {
   return (
-    <TouchableOpacity
-      style={styles.reservationCard}
-      onPress={() =>
-  Alert.alert(
-    guest,
-    [
-      dates,
-      stay,
-      detail,
-      guests !== undefined ? `${guests} guest${guests === 1 ? '' : 's'}` : null,
-      phone ? `Phone: ${phone}` : null,
-      atvAccess ? 'ATV / SxS Access: Yes' : null,
-      total !== undefined ? `Total: $${total}` : null,
-      `Status: ${status}`,
-    ]
-      .filter(Boolean)
-      .join('\n')
-  )
-}
-    >
+    <View style={styles.reservationCard}>
       <View style={styles.reservationTop}>
         <View style={styles.reservationInfo}>
           <Text style={styles.guestName}>{guest}</Text>
@@ -491,9 +478,9 @@ function ReservationCard({
         <View
           style={[
             styles.reservationBadge,
-            status === 'CONFIRMED'
-              ? styles.confirmedBadge
-              : styles.pendingBadge,
+            status === 'CANCELLED' || status === 'COMPLETED'
+              ? styles.inactiveBadge
+              : status === 'PENDING' ? styles.pendingBadge : styles.confirmedBadge,
           ]}
         >
           <Text style={styles.reservationBadgeText}>{status}</Text>
@@ -531,7 +518,20 @@ function ReservationCard({
   )}
 </View>
 
-    </TouchableOpacity>
+      {onOpen && (
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+          <TouchableOpacity onPress={onOpen} style={{ backgroundColor: '#203B2A', borderRadius: 9, padding: 10 }}>
+            <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>{canManageReservation(status) ? 'DETAILS / EDIT' : 'VIEW HISTORY'}</Text>
+          </TouchableOpacity>
+          {onCancel && (
+            <TouchableOpacity onPress={onCancel} style={{ borderColor: '#9F5A4D', borderWidth: 1, borderRadius: 9, padding: 10 }}>
+              <Text style={{ color: '#9F5A4D', fontWeight: '800' }}>CANCEL</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+    </View>
   );
 }
 
@@ -966,6 +966,10 @@ const styles = StyleSheet.create({
 
   pendingBadge: {
     backgroundColor: '#EFE2C9',
+  },
+
+  inactiveBadge: {
+    backgroundColor: '#E5E5E5',
   },
 
   reservationBadgeText: {

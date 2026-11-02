@@ -21,6 +21,7 @@ export type ReservationRecord = {
   nights?: number;
   total?: number;
   status: ReservationStatus;
+  updatedAt?: string;
 };
 
 /*

@@ -68,7 +68,7 @@ export default function BookingScreen() {
             <PackageCard
               title="Parking Only"
               price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights • demo quote only`}
               details="RV site only • hookups remain locked"
               selected={rvPackage === 'Parking Only'}
               onPress={() => setRvPackage('Parking Only')}
@@ -77,7 +77,7 @@ export default function BookingScreen() {
             <PackageCard
               title="Electric + Water"
               price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights • demo quote only`}
               details="Electric and water service enabled"
               selected={rvPackage === 'Electric + Water'}
               onPress={() => setRvPackage('Electric + Water')}
@@ -86,7 +86,7 @@ export default function BookingScreen() {
             <PackageCard
               title="Full Hookup (Deluxe service)"
               price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights • staff live rate`}
               details="Electric • water • septic • Wi-Fi"
               selected={rvPackage === 'Full Hookup'}
               onPress={() => setRvPackage('Full Hookup')}
@@ -95,7 +95,7 @@ export default function BookingScreen() {
             <PackageCard
               title="Deluxe"
               price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights • staff live rate`}
               details="Verified full-hookup service with Wi-Fi"
               selected={rvPackage === 'Deluxe'}
               onPress={() => setRvPackage('Deluxe')}

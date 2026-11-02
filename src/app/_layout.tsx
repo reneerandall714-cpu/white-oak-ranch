@@ -26,6 +26,7 @@ function RootNavigator() {
         <Stack.Screen name="manage-reservations" />
         <Stack.Screen name="new-reservation" />
         <Stack.Screen name="staff-new-reservation" />
+        <Stack.Screen name="staff-reservation-detail" />
         <Stack.Screen name="feature-preview" />
         <Stack.Screen name="gate-access" />
         <Stack.Screen name="manage-events" />

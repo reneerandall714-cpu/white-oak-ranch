@@ -17,7 +17,7 @@ import {
   parseDateInput,
 } from '../data/reservationdata';
 import { calculateStayPricing, RANCH_CONFIG } from '../data/ranchConfig';
-import { canSaveLiveReservationPricing } from '../data/liveReservationPricing';
+import { calculateLiveStayPricing, canSaveLiveReservationPricing } from '../data/liveReservationPricing';
 import { listStaffInventory, type RanchUnit } from '../repositories/inventory-repository';
 import {
   checkStaffUnitAvailability,
@@ -106,7 +106,7 @@ export default function StaffNewReservationScreen() {
       (1000 * 60 * 60 * 24));
   }, [arrival, departure]);
 
-  const pricing = useMemo(() => calculateStayPricing({
+  const pricing = useMemo(() => calculateLiveStayPricing({
     stayType,
     rvService,
     nights,
@@ -322,10 +322,11 @@ export default function StaffNewReservationScreen() {
         </Section>
 
         <View style={styles.summary}>
-          <Text style={styles.summaryLabel}>PRICING SUMMARY</Text>
+          <Text style={styles.summaryLabel}>LIVE PRICING SUMMARY</Text>
           {pricing.weeklyBlocks > 0 && <Text style={styles.summaryLine}>{pricing.weeklyBlocks} × 7-night block @ ${pricing.weeklyBlockRate}: ${pricing.weeklyBlockTotal}</Text>}
           {pricing.remainingNights > 0 && <Text style={styles.summaryLine}>{pricing.remainingNights} night{pricing.remainingNights === 1 ? '' : 's'} @ ${pricing.nightlyRate}: ${pricing.remainingNightlyTotal}</Text>}
           {atvAccess && <Text style={styles.summaryLine}>Overnight ATV / SxS: ${pricing.atvTotal}</Text>}
+          {stayType === 'RV Site' && rvService !== 'Deluxe' && nights >= 7 && <Text style={styles.warningText}>Parking Only and Electric + Water weekly offers are demo-only. Live bookings use the nightly rate for every night.</Text>}
           {!livePricingAvailable && <Text style={styles.warningText}>Only Deluxe/full-hookup weekly totals can be saved live. This service's weekly quote remains demo-only.</Text>}
           <Text style={styles.total}>Total ${pricing.total}</Text>
         </View>
