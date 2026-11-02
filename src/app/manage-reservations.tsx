@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -9,7 +9,16 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { DEMO_RESERVATIONS } from '../data/reservationdata';
+import {
+  DEMO_RESERVATIONS,
+  type ReservationRecord,
+  type ReservationStatus,
+} from '../data/reservationdata';
+import { LIVE_RESERVATIONS_ENABLED } from '../constants/feature-flags';
+import {
+  listStaffReservations,
+  type ReservationRepositoryError,
+} from '../repositories/reservation-repository';
 
 type SiteStatus = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED';
 
@@ -35,6 +44,29 @@ const startingRVSites: RVSite[] = [
 
 export default function ReservationsScreen() {
   const [rvSites, setRVSites] = useState(startingRVSites);
+  const [liveReservations, setLiveReservations] = useState<ReservationRecord[]>(
+    []
+  );
+  const [isLoadingLiveReservations, setIsLoadingLiveReservations] =
+    useState(false);
+  const [liveReservationError, setLiveReservationError] =
+    useState<ReservationRepositoryError | null>(null);
+
+  const loadLiveReservations = useCallback(async () => {
+    if (!LIVE_RESERVATIONS_ENABLED) return;
+
+    setIsLoadingLiveReservations(true);
+    setLiveReservationError(null);
+
+    const result = await listStaffReservations();
+    setLiveReservations(result.reservations);
+    setLiveReservationError(result.error);
+    setIsLoadingLiveReservations(false);
+  }, []);
+
+  useEffect(() => {
+    void loadLiveReservations();
+  }, [loadLiveReservations]);
 
   const availableRV = rvSites.filter(
     (site) => site.status === 'AVAILABLE'
@@ -84,26 +116,26 @@ export default function ReservationsScreen() {
 
           <View style={styles.headerText}>
             <Text style={styles.eyebrow}>WHITE OAK RANCH</Text>
-            <Text style={styles.title}>Reservations</Text>
+            <Text style={styles.title}>Live Staff Reservations</Text>
             <Text style={styles.subtitle}>
-              Lodging inventory & guest arrivals
+              Supabase read-only • staff access required
             </Text>
           </View>
         </View>
 
         <View style={styles.todayCard}>
           <View>
-            <Text style={styles.todayLabel}>TODAY</Text>
-            <Text style={styles.todayTitle}>Ranch Overview</Text>
+            <Text style={styles.todayLabel}>LEGACY DEMO SNAPSHOT</Text>
+            <Text style={styles.todayTitle}>Operations preview</Text>
           </View>
 
           <Text style={styles.todayIcon}>🌲</Text>
         </View>
 
         <View style={styles.statsRow}>
-          <StatCard value="3" label="Arrivals" />
-          <StatCard value="2" label="Departures" />
-          <StatCard value="17" label="Guests" />
+          <StatCard value="3" label="Demo arrivals" />
+          <StatCard value="2" label="Demo departures" />
+          <StatCard value="17" label="Demo guests" />
         </View>
 
         <TouchableOpacity
@@ -114,17 +146,17 @@ export default function ReservationsScreen() {
 
           <View>
             <Text style={styles.newReservationTitle}>
-              New Reservation
+              Demo New Reservation
             </Text>
             <Text style={styles.newReservationText}>
-              Add a guest stay manually
+              Local-only • not written to Supabase
             </Text>
           </View>
         </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={styles.sectionLabel}>RV INVENTORY</Text>
+            <Text style={styles.sectionLabel}>DEMO INVENTORY SNAPSHOT</Text>
             <Text style={styles.sectionTitle}>11 RV Sites</Text>
           </View>
 
@@ -135,6 +167,9 @@ export default function ReservationsScreen() {
           </View>
         </View>
 
+        <Text style={styles.demoControlLabel}>
+          DEMO CONTROLS • NOT LIVE AVAILABILITY
+        </Text>
         <Text style={styles.helperText}>
           Tap a site to cycle through Available → Reserved → Occupied.
         </Text>
@@ -203,12 +238,29 @@ export default function ReservationsScreen() {
 
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={styles.sectionLabel}>UPCOMING</Text>
-            <Text style={styles.sectionTitle}>Reservations</Text>
+            <Text style={styles.sectionLabel}>LIVE STAFF DATA</Text>
+            <Text style={styles.sectionTitle}>Supabase Reservations</Text>
           </View>
         </View>
 
-       {DEMO_RESERVATIONS.map((reservation) => (
+        {LIVE_RESERVATIONS_ENABLED && isLoadingLiveReservations ? (
+          <ReservationStateCard text="Loading live reservations..." />
+        ) : LIVE_RESERVATIONS_ENABLED && liveReservationError ? (
+          <ReservationStateCard
+            text={
+              liveReservationError === 'permission'
+                ? 'Your staff account cannot view live reservations.'
+                : 'Live reservations are temporarily unavailable.'
+            }
+            onRetry={() => void loadLiveReservations()}
+          />
+        ) : LIVE_RESERVATIONS_ENABLED && liveReservations.length === 0 ? (
+          <ReservationStateCard text="No live reservations found." />
+        ) : (
+          (LIVE_RESERVATIONS_ENABLED
+            ? liveReservations
+            : DEMO_RESERVATIONS
+          ).map((reservation) => (
   <ReservationCard
   key={reservation.id}
   guest={reservation.guestName}
@@ -220,16 +272,15 @@ export default function ReservationsScreen() {
       : reservation.unit
   }
   status={
-    reservation.status === 'PENDING'
-      ? 'PENDING'
-      : 'CONFIRMED'
+    reservation.status
   }
   phone={reservation.phone}
   guests={reservation.guests}
   atvAccess={reservation.atvAccess}
   total={reservation.total}
 />
-       ))}
+          ))
+        )}
 
         <View style={styles.serviceCard}>
           <Text style={styles.serviceLabel}>RV SERVICE LEVELS</Text>
@@ -263,16 +314,15 @@ export default function ReservationsScreen() {
         </View>
 
         <View style={styles.futureCard}>
-          <Text style={styles.futureLabel}>WHEN CONNECTED</Text>
+          <Text style={styles.futureLabel}>READ-ONLY MILESTONE</Text>
           <Text style={styles.futureTitle}>
-            Availability becomes automatic.
+            Live staff listing is connected.
           </Text>
 
           <Text style={styles.futureText}>
-            Customer bookings and staff reservations will use the same
-            inventory. Once a site or rental is booked for specific dates,
-            it will no longer appear as available to another guest for that
-            period.
+            Reservation creation remains demo-only in this milestone. Pricing,
+            customer booking, inventory controls and reservation writes remain
+            unchanged.
           </Text>
         </View>
 
@@ -284,6 +334,28 @@ export default function ReservationsScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function ReservationStateCard({
+  text,
+  onRetry,
+}: {
+  text: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <View style={styles.reservationStateCard}>
+      <Text style={styles.reservationStateText}>{text}</Text>
+      {onRetry && (
+        <TouchableOpacity
+          onPress={onRetry}
+          style={styles.reservationRetryButton}
+        >
+          <Text style={styles.reservationRetryText}>TRY AGAIN</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
@@ -366,7 +438,7 @@ function ReservationCard({
   dates: string;
   stay: string;
   detail: string;
-  status: 'CONFIRMED' | 'PENDING';
+  status: ReservationStatus;
   phone?: string;
   guests?: number;
   atvAccess?: boolean;
@@ -654,6 +726,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  demoControlLabel: {
+    color: '#9B7952',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    marginHorizontal: 20,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+
   siteGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -780,6 +862,36 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 16,
     padding: 15,
+  },
+
+  reservationStateCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginHorizontal: 18,
+    marginBottom: 10,
+    padding: 20,
+  },
+
+  reservationStateText: {
+    color: '#59625B',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+
+  reservationRetryButton: {
+    backgroundColor: '#203B2A',
+    borderRadius: 12,
+    marginTop: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+
+  reservationRetryText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.1,
   },
 
   reservationTop: {

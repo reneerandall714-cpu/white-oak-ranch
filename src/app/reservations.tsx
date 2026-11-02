@@ -92,16 +92,32 @@ export default function ReservationsScreen() {
 
           <View>
             <Text style={styles.eyebrow}>WHITE OAK RANCH</Text>
-            <Text style={styles.title}>Reservations</Text>
-            <Text style={styles.subtitle}>Guest stays & site assignments</Text>
+            <Text style={styles.title}>Legacy Reservations Dashboard</Text>
+            <Text style={styles.subtitle}>Demo operations snapshot • not live</Text>
           </View>
         </View>
 
+        <View style={styles.demoNotice}>
+          <Text style={styles.demoNoticeLabel}>DEMO DATA ONLY</Text>
+          <Text style={styles.demoNoticeText}>
+            This legacy dashboard uses sample reservations and does not reflect
+            Supabase availability.
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.push('/manage-reservations')}
+            style={styles.liveViewButton}
+          >
+            <Text style={styles.liveViewButtonText}>
+              OPEN LIVE STAFF RESERVATIONS
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.summaryGrid}>
-          <SummaryCard label="Arrivals" value="2" />
-          <SummaryCard label="Current Stays" value="1" />
-          <SummaryCard label="Departures" value="1" />
-          <SummaryCard label="Upcoming" value="1" />
+          <SummaryCard label="Demo arrivals" value="2" />
+          <SummaryCard label="Demo current stays" value="1" />
+          <SummaryCard label="Demo departures" value="1" />
+          <SummaryCard label="Demo upcoming" value="1" />
         </View>
 
         <View style={styles.filterRow}>
@@ -150,15 +166,19 @@ export default function ReservationsScreen() {
           />
         ))}
 
-        <TouchableOpacity style={styles.addButton}>
-          <Text style={styles.addButtonText}>+ Add Manual Reservation</Text>
+        <TouchableOpacity
+          onPress={() => router.push('/new-reservation')}
+          style={styles.addButton}
+        >
+          <Text style={styles.addButtonText}>+ Create Demo Reservation</Text>
         </TouchableOpacity>
 
         <View style={styles.noteBox}>
-          <Text style={styles.noteTitle}>Future live system</Text>
+          <Text style={styles.noteTitle}>Legacy demo route</Text>
           <Text style={styles.noteText}>
-            Reservations will eventually pull directly from the booking database,
-            including guest details, payments, site availability and gate access.
+            Use Live Staff Reservations for the current read-only Supabase view.
+            This route remains useful for the original layout and sample
+            operations flow only.
           </Text>
         </View>
 
@@ -355,6 +375,44 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: 14,
     marginTop: 18,
+  },
+
+  demoNotice: {
+    marginHorizontal: 18,
+    marginTop: 18,
+    backgroundColor: '#EFE2C9',
+    borderRadius: 16,
+    padding: 17,
+  },
+
+  demoNoticeLabel: {
+    color: '#8A623F',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+
+  demoNoticeText: {
+    color: '#6F5A45',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 5,
+  },
+
+  liveViewButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#203B2A',
+    borderRadius: 10,
+    marginTop: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+
+  liveViewButtonText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 
   summaryCard: {

@@ -55,8 +55,8 @@ export default function AdminScreen() {
 
        <AdminCard
   icon="📋"
-  title="Reservations"
-  subtitle="Bookings, arrivals & lodging availability"
+  title="Live Reservations"
+  subtitle="Primary staff view • Supabase read-only; demo creation separate"
  onPress={() => router.push('/manage-reservations')}
 />
        <AdminCard
