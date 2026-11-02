@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { RANCH_CONFIG } from '../data/ranchConfig';
 
 type StayType = 'rv-site' | 'tent' | 'small-rv' | 'large-rv' | null;
 
@@ -66,8 +67,8 @@ export default function BookingScreen() {
 
             <PackageCard
               title="Parking Only"
-              price="$25/night"
-              weekly="$150/week"
+              price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights`}
               details="RV site only • hookups remain locked"
               selected={rvPackage === 'Parking Only'}
               onPress={() => setRvPackage('Parking Only')}
@@ -75,26 +76,27 @@ export default function BookingScreen() {
 
             <PackageCard
               title="Electric + Water"
-              price="$40/night"
-              weekly="$225/week"
+              price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights`}
               details="Electric and water service enabled"
               selected={rvPackage === 'Electric + Water'}
               onPress={() => setRvPackage('Electric + Water')}
             />
 
             <PackageCard
-              title="Full Hookup"
-              price="$45/night"
-              details="Electric • water • septic"
+              title="Full Hookup (Deluxe service)"
+              price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights`}
+              details="Electric • water • septic • Wi-Fi"
               selected={rvPackage === 'Full Hookup'}
               onPress={() => setRvPackage('Full Hookup')}
             />
 
             <PackageCard
               title="Deluxe"
-              price="$50/night"
-              weekly="$275/week"
-              details="Electric • water • septic • Wi-Fi"
+              price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`}
+              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights`}
+              details="Verified full-hookup service with Wi-Fi"
               selected={rvPackage === 'Deluxe'}
               onPress={() => setRvPackage('Deluxe')}
               featured

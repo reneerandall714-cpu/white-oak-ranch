@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  calculateStayPricing,
   RANCH_CONFIG,
   RV_SITE_NUMBERS,
   TENT_SITE_NUMBERS,
@@ -39,12 +40,6 @@ type RVService =
   | 'Electric + Water'
   | 'Deluxe';
 
-const RV_PRICES: Record<RVService, number> = {
-  'Parking Only': RANCH_CONFIG.pricing.rv.parkingOnly.nightly,
-  'Electric + Water': RANCH_CONFIG.pricing.rv.electricWater.nightly,
-  Deluxe: RANCH_CONFIG.pricing.rv.deluxe.nightly,
-};
-  
 export default function NewReservationScreen() {
   const [guestName, setGuestName] = useState('');
   const [phone, setPhone] = useState('');
@@ -67,29 +62,15 @@ const unavailableUnits = useMemo(
   [arrival, departure]
 );
 const calculatedNights = calculateNights(arrival, departure);
- const nightlyRate = useMemo(() => {
-  if (stayType === 'Tent Site') {
-    return RANCH_CONFIG.pricing.tent.nightly;
-  }
-
-  if (stayType === 'RV Site') {
-    return RV_PRICES[rvService];
-  }
-
-  if (stayType === 'Small Rental RV') {
-    return RANCH_CONFIG.pricing.rentalRV.small.normal;
-  }
-
-  return RANCH_CONFIG.pricing.rentalRV.large.normal;
-}, [stayType, rvService]);
-
-const lodgingTotal = nightlyRate * (calculatedNights ?? 0);
-
-const atvTotal = atvAccess
-  ? RANCH_CONFIG.pricing.overnightAtvSxs
-  : 0;
-
-const total = lodgingTotal + atvTotal;
+const pricing = useMemo(() => calculateStayPricing({
+  stayType,
+  rvService,
+  nights: calculatedNights ?? 0,
+  atvAccess,
+}), [atvAccess, calculatedNights, rvService, stayType]);
+const nightlyRate = pricing.nightlyRate;
+const atvTotal = pricing.atvTotal;
+const total = pricing.total;
 
   function changeGuests(amount: number) {
     setGuests((current) => Math.max(1, current + amount));
@@ -580,14 +561,22 @@ addReservation({
             </Text>
           )}
 
-          <SummaryRow
-           label={`${calculatedNights} night${calculatedNights === 1 ? '' : 's'} × $${nightlyRate}`}
-            value={`$${lodgingTotal}`}
-          />
+          {pricing.weeklyBlocks > 0 && (
+            <SummaryRow
+              label={`${pricing.weeklyBlocks} × 7-night block @ $${pricing.weeklyBlockRate}`}
+              value={`$${pricing.weeklyBlockTotal}`}
+            />
+          )}
+          {pricing.remainingNights > 0 && (
+            <SummaryRow
+              label={`${pricing.remainingNights} night${pricing.remainingNights === 1 ? '' : 's'} × $${nightlyRate}`}
+              value={`$${pricing.remainingNightlyTotal}`}
+            />
+          )}
 
          <SummaryRow
   label="ATV / SxS Access"
-  value="$75"
+  value={`$${atvTotal}`}
 />
 
           <View style={styles.totalDivider} />

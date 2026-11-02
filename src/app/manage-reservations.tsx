@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -14,6 +14,7 @@ import {
   type ReservationRecord,
   type ReservationStatus,
 } from '../data/reservationdata';
+import { RANCH_CONFIG } from '../data/ranchConfig';
 import { LIVE_RESERVATIONS_ENABLED } from '../constants/feature-flags';
 import {
   listStaffReservations,
@@ -64,9 +65,9 @@ export default function ReservationsScreen() {
     setIsLoadingLiveReservations(false);
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     void loadLiveReservations();
-  }, [loadLiveReservations]);
+  }, [loadLiveReservations]));
 
   const availableRV = rvSites.filter(
     (site) => site.status === 'AVAILABLE'
@@ -137,6 +138,18 @@ export default function ReservationsScreen() {
           <StatCard value="2" label="Demo departures" />
           <StatCard value="17" label="Demo guests" />
         </View>
+
+        <TouchableOpacity
+          style={styles.liveNewReservation}
+          onPress={() => router.push('/staff-new-reservation')}
+        >
+          <Text style={styles.liveNewReservationTitle}>
+            Create Live Reservation
+          </Text>
+          <Text style={styles.liveNewReservationText}>
+            Supabase insert • availability and constraints enforced
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.newReservation}
@@ -290,39 +303,40 @@ export default function ReservationsScreen() {
 
           <ServiceRow
             title="Parking Only"
-            price="$25/day"
+            price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night • $${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights`}
             description="RV site without utility hookups"
           />
 
           <ServiceRow
             title="Electric + Water"
-            price="$40/day"
+            price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night • $${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights`}
             description="Electric and water access"
           />
 
           <ServiceRow
-            title="Deluxe"
-            price="$50/day"
+            title="Deluxe (Full Hookup)"
+            price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night • $${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights`}
             description="Water, electric, septic & high-speed internet"
           />
 
           <Text style={styles.serviceNote}>
             All 11 RV sites are physically capable of full hookups.
             Purchased utilities determine which services are unlocked
-            for each reservation.
+            for each reservation. Only Deluxe weekly totals are currently
+            supported for live staff reservations.
           </Text>
         </View>
 
         <View style={styles.futureCard}>
-          <Text style={styles.futureLabel}>READ-ONLY MILESTONE</Text>
+          <Text style={styles.futureLabel}>STAFF RESERVATIONS</Text>
           <Text style={styles.futureTitle}>
-            Live staff listing is connected.
+            Live listing and staff creation are connected.
           </Text>
 
           <Text style={styles.futureText}>
-            Reservation creation remains demo-only in this milestone. Pricing,
-            customer booking, inventory controls and reservation writes remain
-            unchanged.
+            Staff can create live reservations with checked availability and
+            database-enforced pricing. Customer booking and the separate demo
+            reservation flow remain unchanged.
           </Text>
         </View>
 
@@ -663,6 +677,26 @@ const styles = StyleSheet.create({
     padding: 17,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+
+  liveNewReservation: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    backgroundColor: '#D8C59D',
+    borderRadius: 18,
+    padding: 17,
+  },
+
+  liveNewReservationTitle: {
+    color: '#203B2A',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  liveNewReservationText: {
+    color: '#526056',
+    fontSize: 11,
+    marginTop: 3,
   },
 
   newReservationIcon: {

@@ -9,6 +9,7 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { RANCH_CONFIG } from '../data/ranchConfig';
 
 type RateItem = {
   id: string;
@@ -21,10 +22,10 @@ export default function PricingSettingsScreen() {
   const [saved, setSaved] = useState(false);
 
   const rvRates: RateItem[] = [
-    { id: '1', label: 'Parking Only', value: '$25/night', note: '$150/week' },
-    { id: '2', label: 'Electric + Water', value: '$40/night', note: '$225/week' },
-    { id: '3', label: 'Full Hookup', value: '$45/night' },
-    { id: '4', label: 'Deluxe + Wi-Fi', value: '$50/night', note: '$275/week' },
+    { id: '1', label: 'Parking Only', value: `$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights` },
+    { id: '2', label: 'Electric + Water', value: `$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights` },
+    { id: '3', label: 'Full Hookup (Deluxe service)', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights` },
+    { id: '4', label: 'Deluxe + Wi-Fi', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: 'Same verified Deluxe service' },
   ];
 
   const campingRates: RateItem[] = [
