@@ -33,6 +33,7 @@ function RootNavigator() {
         <Stack.Screen name="contractor-payments" />
         <Stack.Screen name="payments" />
         <Stack.Screen name="pricing-settings" />
+        <Stack.Screen name="inventory" />
       </Stack.Protected>
     </Stack>
   );

@@ -162,6 +162,13 @@ export default function AdminScreen() {
   onPress={() => router.push('/pricing-settings')}
 />
 
+        <AdminCard
+          icon="▦"
+          title="Inventory"
+          subtitle="View the ranch units available for reservations"
+          onPress={() => router.push('/inventory')}
+        />
+
         <View style={styles.integrationBox}>
           <Text style={styles.integrationLabel}>PLANNED INTEGRATIONS</Text>
           <Text style={styles.integrationTitle}>
