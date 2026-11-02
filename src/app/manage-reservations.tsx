@@ -21,6 +21,13 @@ import {
   type ReservationRepositoryError,
 } from '../repositories/reservation-repository';
 
+const LIVE_ERROR_MESSAGES: Record<ReservationRepositoryError, string> = {
+  session_expired: 'Your staff session has expired. Sign in again to view live reservations.',
+  permission: 'Your staff account cannot view live reservations.',
+  connectivity: 'Connection to live reservations was lost. Check your network and try again.',
+  unavailable: 'Live reservations are temporarily unavailable.',
+};
+
 type SiteStatus = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED';
 
 type RVSite = {
@@ -260,11 +267,7 @@ export default function ReservationsScreen() {
           <ReservationStateCard text="Loading live reservations..." />
         ) : LIVE_RESERVATIONS_ENABLED && liveReservationError ? (
           <ReservationStateCard
-            text={
-              liveReservationError === 'permission'
-                ? 'Your staff account cannot view live reservations.'
-                : 'Live reservations are temporarily unavailable.'
-            }
+            text={LIVE_ERROR_MESSAGES[liveReservationError]}
             onRetry={() => void loadLiveReservations()}
           />
         ) : LIVE_RESERVATIONS_ENABLED && liveReservations.length === 0 ? (

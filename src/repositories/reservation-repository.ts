@@ -2,19 +2,21 @@ import { supabase } from '../lib/supabase';
 import { calculateStayPricing, type RVServiceName } from '../data/ranchConfig';
 import { canSaveLiveReservationPricing } from '../data/liveReservationPricing';
 import { LIVE_WEEKLY_RESERVATION_PRICING_ENABLED } from '../constants/feature-flags';
+import {
+  buildReservationInsert,
+  mapReservationAccessError,
+  mapReservationSaveError,
+  type ReservationAccessError,
+  type ReservationSaveError,
+} from './reservation-request';
 import type {
   ReservationRecord,
   ReservationStatus,
 } from '../data/reservationdata';
 
-export type ReservationRepositoryError = 'permission' | 'unavailable';
+export type ReservationRepositoryError = ReservationAccessError;
 
-export type ReservationWriteError =
-  | 'permission'
-  | 'conflict'
-  | 'pricing_unavailable'
-  | 'validation'
-  | 'unavailable';
+export type ReservationWriteError = ReservationSaveError;
 
 export type ReservationRepositoryResult = {
   reservations: ReservationRecord[];
@@ -82,15 +84,6 @@ const RESERVATION_COLUMNS = [
 
 const ACTIVE_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN'];
 
-function isPermissionError(error: { code?: string; status?: number }) {
-  return (
-    error.code === '42501' ||
-    error.code === 'PGRST301' ||
-    error.status === 401 ||
-    error.status === 403
-  );
-}
-
 function mapReservationRow(reservation: LiveReservationRow): ReservationRecord {
   return {
     id: reservation.id,
@@ -111,7 +104,7 @@ function mapReservationRow(reservation: LiveReservationRow): ReservationRecord {
 }
 
 export async function listStaffReservations(): Promise<ReservationRepositoryResult> {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from('ranch_reservations')
     .select(RESERVATION_COLUMNS)
     .order('arrival', { ascending: true })
@@ -120,7 +113,7 @@ export async function listStaffReservations(): Promise<ReservationRepositoryResu
   if (error) {
     return {
       reservations: [],
-      error: isPermissionError(error) ? 'permission' : 'unavailable',
+      error: mapReservationAccessError(error, status),
     };
   }
 
@@ -132,20 +125,13 @@ export async function listStaffReservations(): Promise<ReservationRepositoryResu
   };
 }
 
-function mapWriteError(error: { code?: string; status?: number }): ReservationWriteError {
-  if (isPermissionError(error)) return 'permission';
-  if (error.code === '23P01') return 'conflict';
-  if (error.code === '23503' || error.code === '23514') return 'validation';
-  return 'unavailable';
-}
-
 export async function checkStaffUnitAvailability(
   unit: string,
   stayType: string,
   arrival: string,
   departure: string
 ): Promise<UnitAvailabilityResult> {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from('ranch_reservations')
     .select('arrival, departure')
     .eq('unit', unit)
@@ -155,7 +141,7 @@ export async function checkStaffUnitAvailability(
   if (error) {
     return {
       available: false,
-      error: isPermissionError(error) ? 'permission' : 'unavailable',
+      error: mapReservationAccessError(error, status),
     };
   }
 
@@ -180,7 +166,7 @@ export async function createStaffReservation(
   const departure = Date.parse(`${draft.departure}T00:00:00Z`);
   const actualNights = (departure - arrival) / 86_400_000;
   if (!Number.isInteger(actualNights) || actualNights < 1 || draft.nights !== actualNights) {
-    return { reservation: null, error: 'validation' };
+    return { reservation: null, error: 'invalid_draft' };
   }
 
   const pricing = calculateStayPricing({
@@ -190,7 +176,7 @@ export async function createStaffReservation(
     atvAccess: draft.atvAccess,
   });
   if (draft.nightlyRate !== pricing.nightlyRate || draft.total !== pricing.total) {
-    return { reservation: null, error: 'validation' };
+    return { reservation: null, error: 'invalid_draft' };
   }
   if (!canSaveLiveReservationPricing(
     pricing,
@@ -200,30 +186,16 @@ export async function createStaffReservation(
     return { reservation: null, error: 'pricing_unavailable' };
   }
 
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from('ranch_reservations')
-    .insert({
-      guest_name: draft.guestName.trim(),
-      phone: draft.phone?.trim() || null,
-      unit: draft.unit,
-      stay_type: draft.stayType,
-      rv_service: draft.stayType === 'RV Site' ? draft.rvService ?? null : null,
-      arrival: draft.arrival,
-      departure: draft.departure,
-      guests: draft.guests,
-      atv_access: draft.atvAccess,
-      nightly_rate: draft.nightlyRate,
-      nights: draft.nights,
-      total: draft.total,
-      status: 'CONFIRMED',
-    })
+    .insert(buildReservationInsert(draft))
     .select(RESERVATION_COLUMNS)
     .single();
 
   if (error || !data) {
     return {
       reservation: null,
-      error: mapWriteError(error ?? {}),
+      error: error ? mapReservationSaveError(error, status) : 'unavailable',
     };
   }
 

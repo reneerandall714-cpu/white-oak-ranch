@@ -1,28 +1,20 @@
 import { supabase } from '../lib/supabase';
+import { mapReservationAccessError, type ReservationAccessError } from './reservation-request';
 
 export type RanchUnit = {
   id: string;
   stayType: string;
 };
 
-export type InventoryRepositoryError = 'permission' | 'unavailable';
+export type InventoryRepositoryError = ReservationAccessError;
 
 export type InventoryRepositoryResult = {
   units: RanchUnit[];
   error: InventoryRepositoryError | null;
 };
 
-function isPermissionError(error: { code?: string; status?: number }) {
-  return (
-    error.code === '42501' ||
-    error.code === 'PGRST301' ||
-    error.status === 401 ||
-    error.status === 403
-  );
-}
-
 export async function listStaffInventory(): Promise<InventoryRepositoryResult> {
-  const { data, error } = await supabase
+  const { data, error, status } = await supabase
     .from('ranch_units')
     .select('id, stay_type')
     .order('id');
@@ -30,7 +22,7 @@ export async function listStaffInventory(): Promise<InventoryRepositoryResult> {
   if (error) {
     return {
       units: [],
-      error: isPermissionError(error) ? 'permission' : 'unavailable',
+      error: mapReservationAccessError(error, status),
     };
   }
 

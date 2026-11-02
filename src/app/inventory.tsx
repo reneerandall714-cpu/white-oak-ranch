@@ -17,8 +17,10 @@ import {
 } from '../repositories/inventory-repository';
 
 const ERROR_MESSAGES: Record<InventoryRepositoryError, string> = {
+  session_expired: 'Your staff session has expired. Sign in again to view ranch inventory.',
   permission:
     'Your staff account does not have permission to view ranch inventory.',
+  connectivity: 'Connection to ranch inventory was lost. Check your network and try again.',
   unavailable: 'Ranch inventory is temporarily unavailable. Try again.',
 };
 

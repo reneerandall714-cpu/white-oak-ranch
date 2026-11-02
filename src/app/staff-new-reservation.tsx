@@ -54,11 +54,15 @@ const RV_SERVICES: RVService[] = [
 ];
 
 function errorMessage(error: ReservationRepositoryError | ReservationWriteError) {
+  if (error === 'session_expired') return 'Your staff session has expired. Sign in again before creating a reservation.';
   if (error === 'permission') return 'Your staff account is not allowed to do this.';
   if (error === 'conflict') return 'That unit was booked for those dates. Choose another unit.';
+  if (error === 'unit_unavailable') return 'That unit is no longer available for this stay type. Refresh the unit list and choose another.';
   if (error === 'pricing_unavailable') return 'This weekly price cannot be saved to the live database yet.';
-  if (error === 'validation') return 'The reservation does not match the ranch rules.';
-  return 'The live reservation service is unavailable. Try again.';
+  if (error === 'invalid_draft') return 'The reservation details do not match the ranch rules. Review the dates and price.';
+  if (error === 'validation') return 'The database rejected this reservation because it does not match the ranch rules. Review the dates, guests, unit, and price.';
+  if (error === 'connectivity') return 'Connection to the live service was lost. Check the live reservation list before retrying, in case the request completed.';
+  return 'The live reservation service could not confirm the save. Check the live reservation list before retrying.';
 }
 
 export default function StaffNewReservationScreen() {
