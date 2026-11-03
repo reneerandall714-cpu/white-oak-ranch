@@ -1,5 +1,13 @@
 # White Oak Ranch launch readiness
 
+## Job #12 staging status
+
+An isolated environment could **not** be created on the current machine: no container/Postgres runtime is installed, and no second Supabase project or branch exists. A potentially billable cloud resource awaits explicit owner cost approval. **No staging SQL was applied, no database integration test ran, and no production database was changed.** The [staging runbook](../staging/README.md), [synthetic-only baseline](../staging/00_ranch_baseline.sql), [guarded integration suite](../staging/integration.test.mjs), and [evidence report](./STAGING_TEST_REPORT.md) are prepared for execution after provisioning. The app now requires both an isolated staging target and an explicit verified-backend marker before its request flags can turn on; production remains off. An amber staging banner identifies staging builds.
+
+Read-only catalog review also found that the production `authenticated` role has no direct `INSERT` or `UPDATE` grant on `ranch_reservations`, although the staff repository uses direct writes. Investigate this separately in an authorized staff test before asserting those existing screens are fully functional or granting more privileges. Keep booking-request approval under its reviewed staff-only RPC. The five high-severity SDK 57 audit findings and Auth leaked-password protection warning remain launch-review items; neither has been silently waived.
+
+Job #12 local checks: 34/34 automated tests, TypeScript, SDK 57 compatibility and web export passed. No staging integration result or end-to-end booking result is claimed.
+
 Status: public availability is live and read-only. The customer booking request form and protected staff inbox remain behind **disabled** flags. Customer booking remains a preview: it does not save, hold, confirm, or charge anything. The owner chose requests with manual staff approval and **no online payments**, but has **not yet approved the specific SQL migration**. Preserve the existing confirmed RV 05 stay on November 15–22, 2026.
 
 ## Job #11 security review and verification evidence

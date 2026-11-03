@@ -1,3 +1,5 @@
+import { STAGING_BOOKING_REQUESTS_ENABLED } from './staging-environment.ts';
+
 /** Live reservation listing and reviewed staff creation are enabled separately. */
 export const LIVE_RESERVATIONS_ENABLED = true;
 
@@ -11,7 +13,7 @@ export const LIVE_WEEKLY_RESERVATION_PRICING_ENABLED = true;
 // This is read-only. Never fall back to private table reads or enable customer writes.
 export const PUBLIC_AVAILABILITY_ENABLED = true;
 
-// Migration 20261103012314 is review-only. Do not enable until installed,
-// permissions and anonymous/staff flows are verified in a staging clone.
-export const CUSTOMER_REQUEST_SUBMISSION_ENABLED = false;
-export const STAFF_BOOKING_REQUESTS_ENABLED = false;
+// Both remain off in production. Staging requires an isolated URL and an
+// explicit post-integration-test opt-in; never set that opt-in before tests pass.
+export const CUSTOMER_REQUEST_SUBMISSION_ENABLED = STAGING_BOOKING_REQUESTS_ENABLED;
+export const STAFF_BOOKING_REQUESTS_ENABLED = STAGING_BOOKING_REQUESTS_ENABLED;

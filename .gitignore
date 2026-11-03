@@ -30,9 +30,13 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env
-.env*.local
+# environment files (only the placeholder example may be committed)
+.env*
+!.env.staging.example
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
 
 # typescript
 *.tsbuildinfo

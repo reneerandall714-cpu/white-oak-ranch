@@ -1,0 +1,26 @@
+# Isolated booking-request staging runbook
+
+**No staging environment has been created by this repository.** The machine used for Job #12 has no Docker/Podman, local PostgreSQL or WSL. The connected Supabase organization lists only the production White Oak Ranch project and no branches. [Supabase branches are data-less](https://supabase.com/docs/guides/deployment/branching), but GitHub-integrated branches automatically apply repository migrations; this repository contains an older migration that must never run. Do not turn on automatic branching here without isolating the reviewed migration chain. A dedicated empty project or controlled branch may be billable: get the owner's explicit cost/plan approval before creating it. A local Supabase stack is also acceptable after a Docker-compatible runtime is installed.
+
+## Safety and setup
+
+1. Record the new staging project ref and confirm it differs from production `wagmelaupruptnzwjjta`. Use an empty project, never a production backup/clone containing customers, staff accounts or reservation rows. For local Supabase, bind the stack to loopback only. See [Supabase local development](https://supabase.com/docs/guides/local-development).
+2. Copy [the public environment template](../.env.staging.example) to `.env.staging.local`. Use the **staging** URL and publishable key only. Put the **staging-only** service-role key in `.env.staging.secrets.local` as `STAGING_SUPABASE_SERVICE_ROLE_KEY=...`. Both local files are ignored by Git. Never load the secrets file into Expo or use a production staff login.
+3. In the staging SQL editor, verify the selected project ref before each operation. Apply [the synthetic baseline](./00_ranch_baseline.sql) to a **new empty database only**, then the reviewed [Deluxe weekly rule](../supabase/migrations/20261102222837_deluxe_rv_weekly_total.sql), then the reviewed [public availability RPC](../supabase/migrations/20261103005539_public_unit_availability.sql), then the reviewed [booking requests](../supabase/migrations/20261103012314_booking_requests.sql), in that order. Apply no other migration. These manual SQL-editor steps do not automatically register migration-history rows; record each file and checksum separately. Stop on any error or unexpected existing object. Do not use `supabase db push`, `supabase db reset` in this repository, or the old `20261101150000` inventory migration.
+4. Verify the new project's Data API exposes `public` only, not either private schema. Review actual function owners, grants, RLS, constraints, and security advisors before testing. The synthetic baseline deliberately mirrors the observed production reservation grants: authenticated users have SELECT but no direct INSERT/UPDATE. This means the separate staff direct-write screens may fail in staging too; do not widen those grants without a separate owner-reviewed authorization design.
+5. Run the synthetic integration suite from the repository root using Node 22+:
+
+   ```powershell
+   $env:STAGING_TEST_RUN = 'YES'
+   node --env-file=.env.staging.local --env-file=.env.staging.secrets.local --test staging/integration.test.mjs
+   Remove-Item Env:STAGING_TEST_RUN
+   ```
+
+   The suite refuses production URLs, targets lacking the staging-only database sentinel, and any nonempty ranch tables. It requires the explicit staging environment marker and distinct publishable/service keys, creates only `.invalid` synthetic Auth users and request rows, checks privileges and decisions, then removes its exact synthetic IDs. It does not send email. If interrupted, inspect and clean only records tagged `STAGING TEST ONLY` in the staging project. Record test output and project ref in [the staging report](../docs/STAGING_TEST_REPORT.md). A test may fail because the backend has a defect; fix it in reviewed SQL, rebuild an empty staging target and rerun. Do not patch production.
+6. Only after **all** staging integration/security tests pass, set `EXPO_PUBLIC_BOOKING_REQUESTS_VERIFIED=true` in the local staging environment file. Launch the staging app with `node --env-file=.env.staging.local ./node_modules/expo/bin/cli start --web` for web. The amber STAGING banner must appear. Never load `.env.staging.secrets.local` in this process. Test a synthetic customer-to-staff flow, mobile viewport and web, duplicate taps, disconnects, and error recovery. Production builds lack the staging marker and retain disabled request flags.
+
+## Reset and stop
+
+The preferred reset is to dispose of the **confirmed staging-only** project (after checking its exact project ref and any billing implications), or for a local stack to use the local-only CLI reset after creating a separate local Supabase project directory containing *only* the four reviewed SQL steps. Do not run `supabase db reset` from this repository: it contains the unrelated old inventory migration. Never run reset or delete against `wagmelaupruptnzwjjta`.
+
+The request backend has database request-count throttles but no edge/IP or bot protection. Those protections, production SQL approval, staff Auth hardening, and a manual customer confirmation process remain separate launch gates. No payments or automated messages are part of this staging workflow.

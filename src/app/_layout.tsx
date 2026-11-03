@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useEffect } from 'react';
 import { StaffAuthProvider, useStaffAuth } from '../contexts/staff-auth-context';
 import { loadReservations } from '../data/reservationdata';
+import { IS_STAGING_BUILD } from '../constants/staging-environment';
 
 function LoadingScreen() {
   return (
@@ -49,12 +50,20 @@ export default function RootLayout() {
 
   return (
     <StaffAuthProvider>
-      <RootNavigator />
+      <View style={styles.appRoot}>
+        {IS_STAGING_BUILD && <View style={styles.stagingBanner} accessibilityRole="text">
+          <Text style={styles.stagingBannerText}>STAGING TEST ENVIRONMENT · NO REAL BOOKINGS</Text>
+        </View>}
+        <RootNavigator />
+      </View>
     </StaffAuthProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  appRoot: { flex: 1 },
+  stagingBanner: { backgroundColor: '#7B4021', paddingHorizontal: 12, paddingVertical: 7, alignItems: 'center' },
+  stagingBannerText: { color: '#FFFFFF', fontSize: 11, fontWeight: '900', letterSpacing: 0.7, textAlign: 'center' },
   loadingScreen: {
     alignItems: 'center',
     backgroundColor: '#F4F1E8',
