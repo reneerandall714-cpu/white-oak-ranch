@@ -7,9 +7,9 @@ export type RequestResult = { receipt: BookingRequestReceipt | null; error: Book
 
 export function mapBookingRequestError(error: { code?: string; message?: string } | null, status?: number): BookingRequestError {
   if (!error || status === 0) return 'connectivity';
-  if (error.code === 'WR400' || error.code === '22023' || error.code === '23514') return 'validation';
+  if (error.code === 'WR400' || error.code === '22023' || error.code === '22P02' || error.code === '23514') return 'validation';
   if (error.code === 'WR429') return 'rate_limited';
-  if (error.code === 'WR409' || error.code === '23P01' || error.code === '23505') return 'conflict';
+  if (error.code === 'WR409' || error.code === 'WR404' || error.code === '23P01' || error.code === '23503' || error.code === '23505') return 'conflict';
   if (error.code === 'WR412') return 'pricing_changed';
   if (status === 401 || error.code === 'PGRST301') return 'session';
   if (status === 403 || error.code === '42501') return 'permission';
@@ -24,8 +24,8 @@ export const BOOKING_REQUEST_ERROR_TEXT: Record<BookingRequestError, string> = {
   pricing_changed: 'The price changed. Staff must review it before approval.',
   session: 'Your staff session expired. Sign in again.',
   permission: 'This account is not authorized for that action.',
-  connectivity: 'Could not connect. Please retry with the same details; a duplicate request will not be created.',
-  unavailable: 'The request service is temporarily unavailable. Please retry or call the ranch.',
+  connectivity: 'We could not confirm whether the request reached the ranch. Retry here with unchanged details to reuse the same request key, or call the ranch.',
+  unavailable: 'We could not confirm the request status. Retry here with unchanged details, or call the ranch with your dates.',
 };
 
 export async function submitBookingRequest(draft: BookingRequestDraft, idempotencyKey: string): Promise<RequestResult> {
@@ -81,6 +81,8 @@ export async function decideStaffBookingRequest(id: string, decision: Exclude<Bo
     });
     if (error) return mapBookingRequestError(error, status);
     const row = Array.isArray(data) ? data[0] : data;
-    return row?.request_status === decision ? null : 'unavailable';
+    return row?.request_id === id && row?.request_status === decision &&
+      (decision === 'APPROVED' ? typeof row?.reservation_id === 'string' : row?.reservation_id === null)
+      ? null : 'unavailable';
   } catch { return 'connectivity'; }
 }

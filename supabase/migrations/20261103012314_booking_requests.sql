@@ -115,14 +115,14 @@ returns table(request_id uuid, request_status text, quoted_total numeric)
 language plpgsql volatile security definer set search_path = ''
 as $function$
 declare
-  v_name text := nullif(btrim(p_guest_name), '');
-  v_email text := nullif(lower(btrim(p_email)), '');
-  v_phone_input text := nullif(btrim(p_phone), '');
+  v_name text;
+  v_email text;
+  v_phone_input text;
   v_phone text;
-  v_note text := nullif(btrim(p_note), '');
-  v_unit text := nullif(btrim(p_unit), '');
-  v_stay_type text := nullif(btrim(p_stay_type), '');
-  v_service text := nullif(btrim(p_rv_service), '');
+  v_note text;
+  v_unit text;
+  v_stay_type text;
+  v_service text;
   v_existing public.ranch_booking_requests%rowtype;
   v_rate numeric;
   v_total numeric;
@@ -130,6 +130,25 @@ begin
   if p_idempotency_key is null then
     raise exception 'A request key is required' using errcode = 'WR400';
   end if;
+  -- Bound raw inputs before normalization, including whitespace-only and
+  -- invalid attempts. The client limits are not an authorization boundary.
+  if p_guest_name is null or char_length(p_guest_name) > 200
+    or (p_email is not null and char_length(p_email) > 254)
+    or (p_phone is not null and char_length(p_phone) > 40)
+    or (p_note is not null and char_length(p_note) > 1000)
+    or (p_unit is not null and char_length(p_unit) > 30)
+    or (p_stay_type is not null and char_length(p_stay_type) > 30)
+    or (p_rv_service is not null and char_length(p_rv_service) > 30)
+  then
+    raise exception 'Invalid request details' using errcode = 'WR400';
+  end if;
+  v_name := nullif(btrim(p_guest_name), '');
+  v_email := nullif(lower(btrim(p_email)), '');
+  v_phone_input := nullif(btrim(p_phone), '');
+  v_note := nullif(btrim(p_note), '');
+  v_unit := nullif(btrim(p_unit), '');
+  v_stay_type := nullif(btrim(p_stay_type), '');
+  v_service := nullif(btrim(p_rv_service), '');
   if v_phone_input is not null then
     if v_phone_input !~ '^[+0-9(). -]+$' then
       raise exception 'Invalid phone' using errcode = 'WR400';
@@ -259,12 +278,16 @@ declare
   v_rate numeric;
   v_total numeric;
   v_reservation_id uuid;
-  v_note text := nullif(btrim(p_decision_note), '');
+  v_note text;
 begin
   if v_staff_id is null or not exists (select 1 from public.ranch_staff s
     where s.user_id = v_staff_id and s.active) then
     raise exception 'Active staff access required' using errcode = '42501';
   end if;
+  if p_decision_note is not null and char_length(p_decision_note) > 500 then
+    raise exception 'Invalid decision' using errcode = 'WR400';
+  end if;
+  v_note := nullif(btrim(p_decision_note), '');
   if p_request_id is null or p_decision is null
     or p_decision not in ('APPROVED', 'REJECTED')
     or (v_note is not null and char_length(v_note) > 500) then

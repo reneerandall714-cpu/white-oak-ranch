@@ -18,6 +18,7 @@ export default function StaffBookingRequestsScreen() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<BookingRequestError | null>(null);
+  const [errorContext, setErrorContext] = useState<'load' | 'decision'>('load');
   const [success, setSuccess] = useState<string | null>(null);
   const saveLock = useRef(false);
   const selected = requests.find((item) => item.requestId === selectedId) ?? null;
@@ -26,7 +27,7 @@ export default function StaffBookingRequestsScreen() {
     if (!STAFF_BOOKING_REQUESTS_ENABLED) return;
     setLoading(true); setError(null);
     const result = await listStaffBookingRequests();
-    setRequests(result.requests); setError(result.error); setLoading(false);
+    setRequests(result.requests); setErrorContext('load'); setError(result.error); setLoading(false);
   }
   useEffect(() => { void refresh(); }, []);
 
@@ -35,7 +36,7 @@ export default function StaffBookingRequestsScreen() {
     saveLock.current = true; setSaving(true); setError(null); setSuccess(null);
     try {
       const result = await decideStaffBookingRequest(selected.requestId, confirm, decisionNote);
-      if (result) { setError(result); return; }
+      if (result) { setErrorContext('decision'); setError(result); return; }
       setSuccess(confirm === 'APPROVED' ? 'Approved and saved as a confirmed reservation.' : 'Rejected. No reservation was created.');
       setConfirm(null); setDecisionNote('');
       await refresh();
@@ -51,11 +52,11 @@ export default function StaffBookingRequestsScreen() {
       {!STAFF_BOOKING_REQUESTS_ENABLED ? <View style={s.notice}><Text style={s.noticeTitle}>Backend approval pending</Text><Text style={s.body}>No requests can be submitted or reviewed online yet. The intake migration must be installed and security-tested before this inbox is enabled.</Text></View> : <>
         <TouchableOpacity accessibilityRole="button" disabled={loading || saving} onPress={() => void refresh()} style={s.button}><Text style={s.buttonText}>{loading ? 'Loading…' : 'Refresh inbox'}</Text></TouchableOpacity>
         {loading && <ActivityIndicator color="#203B2A" />}
-        {error && <View accessibilityLiveRegion="polite" style={s.notice}><Text style={s.noticeTitle}>Could not complete the action</Text><Text style={s.body}>{BOOKING_REQUEST_ERROR_TEXT[error]}</Text></View>}
+        {error && <View accessibilityLiveRegion="polite" style={s.notice}><Text style={s.noticeTitle}>{errorContext === 'decision' && (error === 'connectivity' || error === 'unavailable') ? 'Decision status unknown' : 'Could not complete the action'}</Text><Text style={s.body}>{errorContext === 'decision' && (error === 'connectivity' || error === 'unavailable') ? 'Refresh the inbox before trying again. The decision may already have been saved.' : BOOKING_REQUEST_ERROR_TEXT[error]}</Text></View>}
         {success && <View accessibilityLiveRegion="polite" style={s.notice}><Text style={s.noticeTitle}>{success}</Text></View>}
         <Text style={s.caption}>Showing the 200 most recent requests. Counts below reflect this list.</Text>
         <View style={s.tabs}>{FILTERS.map((status) => <TouchableOpacity key={status} accessibilityRole="tab" accessibilityState={{ selected: filter === status }} onPress={() => { setFilter(status); setSelectedId(null); setConfirm(null); }} style={[s.tab, filter === status && s.tabActive]}><Text style={s.tabText}>{status} ({requests.filter((item) => item.status === status).length})</Text></TouchableOpacity>)}</View>
-        {!loading && requests.filter((item) => item.status === filter).length === 0 && <View style={s.notice}><Text style={s.noticeTitle}>No {filter.toLowerCase()} requests</Text><Text style={s.body}>Refresh to check for new requests.</Text></View>}
+        {!loading && !error && requests.filter((item) => item.status === filter).length === 0 && <View style={s.notice}><Text style={s.noticeTitle}>No {filter.toLowerCase()} requests</Text><Text style={s.body}>Refresh to check for new requests.</Text></View>}
         {requests.filter((item) => item.status === filter).map((item) => <TouchableOpacity key={item.requestId} accessibilityRole="button" onPress={() => { setSelectedId(item.requestId); setConfirm(null); setDecisionNote(''); }} style={[s.card, selectedId === item.requestId && s.cardSelected]}>
           <Text style={s.cardTitle}>{item.guestName} · {item.unit}</Text><Text style={s.body}>{item.arrival} to {item.departure} · ${item.quotedTotal}</Text>
           <Text style={s.caption}>{item.status} · submitted {new Date(item.submittedAt).toLocaleString()}</Text>

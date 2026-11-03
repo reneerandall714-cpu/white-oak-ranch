@@ -101,9 +101,13 @@ export default function BookingScreen() {
   }
 
   if (submission) return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={[s.content, { paddingTop: 38 }]}>
-    <Text style={s.kicker}>WHITE OAK RANCH</Text><Text style={s.heading}>Request received</Text>
+    <Text style={s.kicker}>WHITE OAK RANCH</Text><Text style={s.heading}>{submission.receipt.status === 'PENDING' ? 'Request received' : 'Request status'}</Text>
     <Notice title={submission.receipt.status === 'PENDING' ? 'PENDING REVIEW' : submission.receipt.status}
-      message="Staff must review and confirm this request. This receipt is not a reservation, a site hold or a payment. Availability may change before approval." />
+      message={submission.receipt.status === 'PENDING'
+        ? 'Staff must review this request. It is not a confirmed reservation, site hold or payment. Availability may change before approval.'
+        : submission.receipt.status === 'APPROVED'
+          ? 'Staff approved this request. Contact the ranch for your reservation details; no payment was collected here.'
+          : 'Staff rejected this request. No reservation was created or payment collected. Contact the ranch to discuss alternatives.'} />
     <View style={[s.summary, { marginTop: 20 }]}>
       <Text style={s.summaryKicker}>REQUEST REFERENCE</Text><Text selectable style={s.summaryTitle}>{submission.receipt.requestId}</Text>
       <Text style={s.summarySub}>{submission.draft.unit} · {submission.draft.stayType} · {submission.draft.arrival} to {submission.draft.departure}</Text>
@@ -138,7 +142,7 @@ export default function BookingScreen() {
 
         {choice === 'rv-site' && <View style={s.services}><Text style={s.label}>RV SERVICE</Text>{SERVICES.map((item) => <TouchableOpacity key={item.name} accessibilityRole="radio" accessibilityState={{ selected: service === item.name }} style={[s.service, service === item.name && s.selected]} onPress={() => { setService(item.name); resetRequest(); }}>
           <Text style={s.cardTitle}>{item.name}</Text><Text style={s.muted}>{item.details}</Text><Text style={s.rate}>{item.rate}</Text>
-        </TouchableOpacity>)}<Text style={s.hint}>Only Deluxe full-hookup has the $200 complete 7-night rate. Other RV services use nightly rates in this preview; advertised weekly offers need staff confirmation.</Text></View>}
+        </TouchableOpacity>)}<Text style={s.hint}>Only Deluxe full-hookup has the $200 complete 7-night rate. Other RV services use nightly rates in this estimate; advertised weekly offers need staff confirmation.</Text></View>}
 
         {stayType && <>
           <View style={s.guestRow}><View><Text style={s.label}>GUESTS</Text><Text style={s.hint}>Up to {capacity} for this request</Text></View><View style={s.stepper}>
@@ -170,16 +174,16 @@ export default function BookingScreen() {
           <View style={s.total}><Text style={s.totalText}>Estimated total</Text><Text style={s.totalAmount}>${quote.total}</Text></View>
           <Text style={s.disclaimer}>This base estimate includes lodging and selected ATV access only. Extra adult, child or vehicle fees for tent stays, special events and holiday rates require staff confirmation. {CUSTOMER_REQUEST_SUBMISSION_ENABLED ? 'A request does not hold a site, guarantee a reservation or charge you.' : 'This preview does not save a request, hold a site or charge you.'}</Text>
           {CUSTOMER_REQUEST_SUBMISSION_ENABLED ? <>
-            <Text style={[s.label, { marginTop: 18 }]}>YOUR NAME</Text>
+            <Text style={[s.summaryLabel, { marginTop: 18 }]}>YOUR NAME</Text>
             <TextInput accessibilityLabel="Your name" autoComplete="name" style={s.input} value={guestName} maxLength={200} onChangeText={(value) => { setGuestName(value); resetRequest(); }} />
-            <Text style={[s.label, { marginTop: 12 }]}>EMAIL OR PHONE (AT LEAST ONE)</Text>
+            <Text style={[s.summaryLabel, { marginTop: 12 }]}>EMAIL OR PHONE (AT LEAST ONE)</Text>
             <TextInput accessibilityLabel="Email address" autoComplete="email" keyboardType="email-address" autoCapitalize="none" style={s.input} value={email} maxLength={254} onChangeText={(value) => { setEmail(value); resetRequest(); }} />
             <TextInput accessibilityLabel="Phone number" autoComplete="tel" keyboardType="phone-pad" style={[s.input, { marginTop: 8 }]} value={phone} maxLength={30} onChangeText={(value) => { setPhone(value); resetRequest(); }} />
-            <Text style={[s.label, { marginTop: 12 }]}>NOTE (OPTIONAL)</Text>
+            <Text style={[s.summaryLabel, { marginTop: 12 }]}>NOTE (OPTIONAL)</Text>
             <TextInput accessibilityLabel="Note for staff" multiline style={s.input} value={note} maxLength={1000} onChangeText={(value) => { setNote(value); resetRequest(); }} />
             <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: !canPreview || submitting }} style={[s.button, (!canPreview || submitting) && s.disabled]} disabled={!canPreview || submitting} onPress={() => void submitRequest()}><Text style={s.buttonText}>{submitting ? 'Sending request…' : 'Send booking request'}</Text></TouchableOpacity>
             {submitting && <ActivityIndicator color="#D8C59D" />}
-            {submitError && <Notice title="Request not sent" message={validationMessage ?? BOOKING_REQUEST_ERROR_TEXT[submitError]} />}
+            {submitError && <Notice title={submitError === 'connectivity' || submitError === 'unavailable' ? 'Submission status unknown' : 'Request not accepted'} message={validationMessage ?? BOOKING_REQUEST_ERROR_TEXT[submitError]} />}
           </> : <>
             <TouchableOpacity style={[s.button, !canPreview && s.disabled]} disabled={!canPreview} onPress={() => setPreview(true)}><Text style={s.buttonText}>Preview request · not sent</Text></TouchableOpacity>
             {preview && canPreview && <Notice title="Contact the ranch to request this stay" message={`Nothing has been submitted or saved. Call ${RANCH_CONFIG.ranch.phone} with these dates and site; staff will confirm current availability and pricing.`} />}
@@ -215,6 +219,7 @@ const s = StyleSheet.create({
   heading: { color: '#203B2A', fontSize: 25, fontWeight: '800', marginTop: 5, marginBottom: 14 },
   dates: { flexDirection: 'row', gap: 10 }, dateField: { flex: 1 },
   label: { color: '#526455', fontSize: 11, fontWeight: '900', letterSpacing: 1, marginBottom: 7 },
+  summaryLabel: { color: '#E9E3D3', fontSize: 11, fontWeight: '900', letterSpacing: 1, marginBottom: 7 },
   input: { backgroundColor: '#FFFFFF', borderColor: '#DDD9CE', borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 16, color: '#203B2A' },
   error: { color: '#9E3E37', fontSize: 12, marginTop: 8, fontWeight: '700' },
   hint: { color: '#667167', fontSize: 12, lineHeight: 18, marginTop: 8 },

@@ -49,6 +49,7 @@ test('server SQL prices Deluxe blocks and other services without accepting clien
 });
 
 test('request table remains private and decisions require active staff', () => {
+  assert.match(sql, /alter table public\.ranch_booking_requests enable row level security/);
   assert.match(sql, /revoke all on table public\.ranch_booking_requests from public, anon, authenticated/);
   assert.match(sql, /grant select on table public\.ranch_booking_requests to authenticated/);
   assert.match(sql, /create policy ranch_booking_requests_staff_read[\s\S]*?s\.active/);
@@ -57,6 +58,26 @@ test('request table remains private and decisions require active staff', () => {
   assert.doesNotMatch(sql, /grant\s+(select|insert|update|delete)\s+on\s+.*to\s+anon/i);
   assert.doesNotMatch(sql, /grant\s+insert\s+on\s+.*ranch_reservations/i);
   assert.doesNotMatch(sql, /delete\s+from\s+public\./i);
+  assert.match(sql, /create schema ranch_booking_private/);
+  assert.match(sql, /security definer set search_path = ''/g);
+  assert.match(sql, /security invoker set search_path = ''/g);
+  assert.match(sql, /revoke all on function ranch_booking_private\.quote\(text, text, date, date, boolean\)/);
+  assert.match(sql, /grant execute on function public\.ranch_submit_booking_request\([\s\S]*?\) to anon, authenticated/);
+  assert.doesNotMatch(sql, /execute\s+format\s*\(|execute\s+'\s*(select|insert|update|delete)/i);
+  assert.match(sql, /returns table\(request_id uuid, request_status text, quoted_total numeric\)/);
+  assert.doesNotMatch(sql, /returns table\([^)]*(guest_name|email|phone|created_by)/i);
+});
+
+test('server bounds raw fields and validates independently of client controls', () => {
+  for (const field of ['p_guest_name', 'p_email', 'p_phone', 'p_note', 'p_unit', 'p_stay_type', 'p_rv_service']) {
+    assert.match(sql, new RegExp(`char_length\\(${field}\\) >`));
+  }
+  assert.match(sql, /p_departure > p_arrival \+ 365/);
+  assert.match(sql, /p_arrival > \(\(current_timestamp at time zone 'America\/Chicago'\)::date \+ interval '18 months'\)::date/);
+  assert.match(sql, /p_guests > 6/);
+  assert.match(sql, /p_guests > 5/);
+  assert.match(sql, /p_guests > 8/);
+  assert.match(sql, /v_service not in \('Parking Only', 'Electric \+ Water', 'Deluxe'\)/);
 });
 
 test('idempotency, rate bounds and approval race guards are present (runtime test pending migration)', () => {
@@ -70,6 +91,10 @@ test('idempotency, rate bounds and approval race guards are present (runtime tes
   assert.match(sql, /insert into public\.ranch_reservations/);
   assert.match(sql, /update public\.ranch_booking_requests as b set/);
   assert.match(sql, /pg_catalog\.daterange\(r\.arrival, r\.departure, '\[\)'\)/);
+  assert.match(sql, /v_request\.status <> 'PENDING'/);
+  assert.match(sql, /v_rate is distinct from v_request\.nightly_rate/);
+  assert.match(sql, /v_total is distinct from v_request\.quoted_total/);
+  assert.match(sql, /'CONFIRMED', v_staff_id/);
 });
 
 test('customer and staff paths stay disabled until migration approval', () => {
@@ -79,6 +104,13 @@ test('customer and staff paths stay disabled until migration approval', () => {
   assert.equal(STAFF_BOOKING_REQUESTS_ENABLED, false);
   assert.match(repo, /supabase\.rpc\('ranch_submit_booking_request'/);
   assert.match(repo, /supabase\.rpc\('ranch_decide_booking_request'/);
+  assert.match(repo, /decision === 'APPROVED' \? typeof row\?\.reservation_id === 'string'/);
+  assert.match(repo, /We could not confirm whether the request reached the ranch/);
   assert.doesNotMatch(repo, /from\('ranch_reservations'\)/);
   assert.match(layout, /Stack\.Protected guard=\{isStaff\}[\s\S]*staff-booking-requests/);
+  const customer = source('../src/app/booking.tsx');
+  assert.match(customer, /Submission status unknown/);
+  assert.match(customer, /PENDING REVIEW/);
+  assert.match(customer, /not a confirmed reservation, site hold or payment/);
+  assert.match(customer, /CUSTOMER_REQUEST_SUBMISSION_ENABLED/);
 });
