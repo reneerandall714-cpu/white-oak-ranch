@@ -1,648 +1,175 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RANCH_CONFIG } from '../data/ranchConfig';
+import { PUBLIC_AVAILABILITY_ENABLED } from '../constants/feature-flags';
+import { availableUnitsForStay, CUSTOMER_STAY_TYPES, maxGuestsForStay, validateStayDates, type CustomerStayChoice, type PublicUnit } from '../data/customerAvailability';
+import { calculateLiveStayPricing } from '../data/liveReservationPricing';
+import { RANCH_CONFIG, type RVServiceName } from '../data/ranchConfig';
+import { getPublicAvailability, type PublicAvailabilityError } from '../repositories/customer-availability-repository';
 
-type StayType = 'rv-site' | 'tent' | 'small-rv' | 'large-rv' | null;
+const STAYS: { key: CustomerStayChoice; title: string; details: string; rate: string }[] = [
+  { key: 'rv-site', title: 'RV site', details: '11 sites · choose your service', rate: 'From $25/night' },
+  { key: 'tent', title: 'Tent campsite', details: '10 sites · up to 6 guests', rate: '$25/night' },
+  { key: 'small-rv', title: 'Small rental RV', details: 'Sleeps up to 5', rate: '$75/night' },
+  { key: 'large-rv', title: 'Large rental RV', details: 'Sleeps up to 8', rate: '$99/night' },
+];
+const SERVICES: { name: RVServiceName; details: string; rate: string }[] = [
+  { name: 'Parking Only', details: 'No hookups', rate: '$25/night' },
+  { name: 'Electric + Water', details: 'Electric and water', rate: '$40/night' },
+  { name: 'Deluxe', details: 'Full hookup · electric, water, septic, Wi-Fi', rate: '$50/night · $200/7 nights' },
+];
+const ERRORS: Record<PublicAvailabilityError, string> = {
+  pending_approval: 'Live availability awaits approval of a secure database endpoint. No sites can be shown or requested online yet. Call the ranch to check your dates.',
+  validation: 'The database did not accept those dates. Please review them and retry.',
+  connectivity: 'Could not connect to live availability. Check your connection and retry.',
+  unavailable: 'Live availability is temporarily unavailable. Please retry or call the ranch.',
+};
 
 export default function BookingScreen() {
-  const [selectedStay, setSelectedStay] = useState<StayType>(null);
-  const [rvPackage, setRvPackage] = useState<string | null>(null);
+  const [arrival, setArrival] = useState('');
+  const [departure, setDeparture] = useState('');
+  const [choice, setChoice] = useState<CustomerStayChoice | null>(null);
+  const [service, setService] = useState<RVServiceName | null>(null);
+  const [guests, setGuests] = useState(2);
+  const [atv, setAtv] = useState(false);
+  const [units, setUnits] = useState<PublicUnit[]>([]);
+  const [unitId, setUnitId] = useState<string | null>(null);
+  const [searched, setSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<PublicAvailabilityError | null>(null);
+  const [preview, setPreview] = useState(false);
+  const sequence = useRef(0);
+  const stayType = choice ? CUSTOMER_STAY_TYPES[choice] : null;
+  const date = validateStayDates(arrival, departure);
+  const capacity = stayType ? maxGuestsForStay(stayType) : 8;
+  const canQuote = Boolean(stayType && date.nights > 0 && (choice !== 'rv-site' || service));
+  const quote = canQuote ? calculateLiveStayPricing({ stayType: stayType!, rvService: service ?? undefined, nights: date.nights, atvAccess: atv }) : null;
+  const matching = units.filter((unit) => unit.stayType === stayType);
+  const available = stayType ? availableUnitsForStay(units, stayType) : [];
+  const canPreview = searched && !loading && !error && Boolean(unitId && available.some((unit) => unit.unitId === unitId)) && canQuote && guests >= 1 && guests <= capacity;
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backText}>‹</Text>
-          </TouchableOpacity>
-
-          <View style={styles.headerText}>
-            <Text style={styles.eyebrow}>WHITE OAK RANCH</Text>
-            <Text style={styles.title}>Book Your Stay</Text>
-            <Text style={styles.headerSubtitle}>Dunlap, Tennessee</Text>
-          </View>
-        </View>
-
-        <View style={styles.intro}>
-          <Text style={styles.introTitle}>Find your place at the ranch.</Text>
-
-          <Text style={styles.introText}>
-            Choose your stay below. Live dates, availability and checkout will
-            be connected next.
-          </Text>
-        </View>
-
-        <Text style={styles.sectionLabel}>ACCOMMODATIONS</Text>
-
-        <StayCard
-          icon="🚐"
-          title="RV Site"
-          description="11 deluxe-capable RV sites"
-          price="From $25/night"
-          selected={selectedStay === 'rv-site'}
-          onPress={() => {
-            setSelectedStay('rv-site');
-            setRvPackage(null);
-          }}
-        />
-
-        {selectedStay === 'rv-site' && (
-          <View style={styles.packageSection}>
-            <Text style={styles.packageHeading}>Choose your RV package</Text>
-            <Text style={styles.packageSubheading}>
-              All 11 sites are deluxe-capable. Staff enables the services
-              included with your reservation.
-            </Text>
-
-            <PackageCard
-              title="Parking Only"
-              price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights • demo quote only`}
-              details="RV site only • hookups remain locked"
-              selected={rvPackage === 'Parking Only'}
-              onPress={() => setRvPackage('Parking Only')}
-            />
-
-            <PackageCard
-              title="Electric + Water"
-              price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights • demo quote only`}
-              details="Electric and water service enabled"
-              selected={rvPackage === 'Electric + Water'}
-              onPress={() => setRvPackage('Electric + Water')}
-            />
-
-            <PackageCard
-              title="Full Hookup (Deluxe service)"
-              price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights • staff live rate`}
-              details="Electric • water • septic • Wi-Fi"
-              selected={rvPackage === 'Full Hookup'}
-              onPress={() => setRvPackage('Full Hookup')}
-            />
-
-            <PackageCard
-              title="Deluxe"
-              price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`}
-              weekly={`$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights • staff live rate`}
-              details="Verified full-hookup service with Wi-Fi"
-              selected={rvPackage === 'Deluxe'}
-              onPress={() => setRvPackage('Deluxe')}
-              featured
-            />
-          </View>
-        )}
-
-        <StayCard
-          icon="🏕️"
-          title="Tent Camping"
-          description="10 campsites • includes 2 adults + 4 children"
-          price="$25/night"
-          selected={selectedStay === 'tent'}
-          onPress={() => setSelectedStay('tent')}
-        />
-
-        {selectedStay === 'tent' && (
-          <View style={styles.detailBox}>
-            <DetailRow label="Base rate" value="$25/night" />
-            <DetailRow label="Additional adult" value="+$10" />
-            <DetailRow label="Additional child" value="+$5" />
-            <DetailRow label="Additional vehicle" value="+$10" />
-            <DetailRow label="Bring ATV / SxS" value="+$75/stay" />
-          </View>
-        )}
-
-        <StayCard
-          icon="🚎"
-          title="Rental RV • Sleeps 4–5"
-          description="White Oak Ranch rental RV"
-          price="$75/night"
-          selected={selectedStay === 'small-rv'}
-          onPress={() => setSelectedStay('small-rv')}
-        />
-
-        {selectedStay === 'small-rv' && (
-          <View style={styles.detailBox}>
-            <DetailRow label="Standard rate" value="$75/night" />
-            <DetailRow label="Event / holiday rate" value="$99/night" />
-            <DetailRow label="Sleeps" value="4–5 guests" />
-          </View>
-        )}
-
-        <StayCard
-          icon="🚌"
-          title="Rental RV • Sleeps 6–8"
-          description="Larger White Oak Ranch rental RV"
-          price="$99/night"
-          selected={selectedStay === 'large-rv'}
-          onPress={() => setSelectedStay('large-rv')}
-        />
-
-        {selectedStay === 'large-rv' && (
-          <View style={styles.detailBox}>
-            <DetailRow label="Standard rate" value="$99/night" />
-            <DetailRow label="Event / holiday rate" value="$125/night" />
-            <DetailRow label="Sleeps" value="6–8 guests" />
-          </View>
-        )}
-
-        {selectedStay && (
-          <View style={styles.nextSection}>
-            <Text style={styles.nextTitle}>
-              {getSelectionTitle(selectedStay, rvPackage)}
-            </Text>
-
-            <Text style={styles.nextText}>
-              Next we'll add date selection and live availability so guests can
-              reserve an actual site or rental.
-            </Text>
-
-           <TouchableOpacity
-  style={styles.continueButton}
-  onPress={() =>
-    router.push({
-      pathname: '/feature-preview',
-      params: {
-        title: 'Dates & Availability',
-        icon: '📅',
-        description:
-          'Guests will choose arrival and departure dates here, then the system will show live available RV sites, campsites and rental RVs.',
-      },
-    })
+  function resetAvailability() {
+    sequence.current += 1;
+    setUnits([]); setUnitId(null); setSearched(false); setLoading(false); setError(null); setPreview(false);
   }
->
-  <Text style={styles.continueButtonText}>Choose Dates</Text>
-</TouchableOpacity>
-</View>
-)}
-        <View style={styles.footer}>
-          <Text style={styles.footerLogo}>WHITE OAK RANCH</Text>
-          <Text style={styles.footerText}>Tennessee Resort & Campground</Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function StayCard({
-  icon,
-  title,
-  description,
-  price,
-  selected,
-  onPress,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  price: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.stayCard, selected && styles.stayCardSelected]}
-      onPress={onPress}
-    >
-      <View style={styles.iconBox}>
-        <Text style={styles.icon}>{icon}</Text>
-      </View>
-
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={styles.cardDescription}>{description}</Text>
-        <Text style={styles.cardPrice}>{price}</Text>
-      </View>
-
-      <Text style={styles.cardArrow}>{selected ? '⌄' : '›'}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function PackageCard({
-  title,
-  price,
-  weekly,
-  details,
-  selected,
-  onPress,
-  featured = false,
-}: {
-  title: string;
-  price: string;
-  weekly?: string;
-  details: string;
-  selected: boolean;
-  onPress: () => void;
-  featured?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[
-        styles.packageCard,
-        featured && styles.featuredPackage,
-        selected && styles.packageSelected,
-      ]}
-    >
-      <View style={styles.packageTop}>
-        <View>
-          <View style={styles.packageTitleRow}>
-            <Text style={styles.packageTitle}>{title}</Text>
-            {featured && <Text style={styles.bestBadge}>FULL ACCESS</Text>}
-          </View>
-
-          <Text style={styles.packageDetails}>{details}</Text>
-        </View>
-
-        <View style={styles.packagePriceArea}>
-          <Text style={styles.packagePrice}>{price}</Text>
-          {weekly && <Text style={styles.weeklyPrice}>{weekly}</Text>}
-        </View>
-      </View>
-
-      {selected && (
-        <Text style={styles.selectedText}>✓ Selected</Text>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
-    </View>
-  );
-}
-
-function getSelectionTitle(
-  selectedStay: StayType,
-  rvPackage: string | null
-) {
-  if (selectedStay === 'rv-site') {
-    return rvPackage
-      ? `RV Site • ${rvPackage}`
-      : 'Choose an RV service package';
+  async function checkAvailability() {
+    if (!stayType || date.error || !PUBLIC_AVAILABILITY_ENABLED) return;
+    const current = ++sequence.current;
+    setSearched(true); setLoading(true); setError(null); setUnitId(null); setPreview(false);
+    const result = await getPublicAvailability(arrival, departure);
+    if (current !== sequence.current) return;
+    setUnits(result.units); setError(result.error); setLoading(false);
   }
 
-  if (selectedStay === 'tent') return 'Tent Camping';
-  if (selectedStay === 'small-rv') return 'Rental RV • Sleeps 4–5';
-  if (selectedStay === 'large-rv') return 'Rental RV • Sleeps 6–8';
+  return <SafeAreaView style={s.safe}>
+    <ScrollView contentContainerStyle={s.page} keyboardShouldPersistTaps="handled">
+      <View style={s.hero}>
+        <TouchableOpacity accessibilityLabel="Go back" onPress={() => router.back()} style={s.back}><Text style={s.backText}>‹</Text></TouchableOpacity>
+        <Text style={s.eyebrow}>WHITE OAK RANCH · DUNLAP, TENNESSEE</Text>
+        <Text style={s.title}>Plan your stay</Text>
+        <Text style={s.heroText}>Find open space under the oaks. Explore dates, a site and a transparent price.</Text>
+        <Text style={s.pill}>REQUEST PREVIEW ONLY · NO ONLINE BOOKING</Text>
+      </View>
+      <View style={s.content}>
+        <Text style={s.kicker}>01 · WHEN</Text><Text style={s.heading}>Pick your dates</Text>
+        <View style={s.dates}>
+          <View style={s.dateField}><Text style={s.label}>ARRIVAL</Text><TextInput accessibilityLabel="Arrival date" placeholder="YYYY-MM-DD" placeholderTextColor="#8B918B" style={s.input} value={arrival} maxLength={10} autoCapitalize="none" keyboardType="numbers-and-punctuation" onChangeText={(value) => { setArrival(value); resetAvailability(); }} /></View>
+          <View style={s.dateField}><Text style={s.label}>DEPARTURE</Text><TextInput accessibilityLabel="Departure date" placeholder="YYYY-MM-DD" placeholderTextColor="#8B918B" style={s.input} value={departure} maxLength={10} autoCapitalize="none" keyboardType="numbers-and-punctuation" onChangeText={(value) => { setDeparture(value); resetAvailability(); }} /></View>
+        </View>
+        {arrival || departure ? <Text style={date.error ? s.error : s.hint}>{date.error ?? `${date.nights} night${date.nights === 1 ? '' : 's'} · checkout day is not charged`}</Text> : null}
 
-  return '';
+        <Text style={s.kicker}>02 · WHERE</Text><Text style={s.heading}>Choose your stay</Text>
+        <View style={s.grid}>{STAYS.map((stay) => <TouchableOpacity key={stay.key} accessibilityRole="button" style={[s.card, choice === stay.key && s.selected]} onPress={() => { setChoice(stay.key); setService(null); setGuests(2); resetAvailability(); }}>
+          <Text style={s.cardTitle}>{stay.title}</Text><Text style={s.muted}>{stay.details}</Text><Text style={s.rate}>{stay.rate}</Text>
+        </TouchableOpacity>)}</View>
+
+        {choice === 'rv-site' && <View style={s.services}><Text style={s.label}>RV SERVICE</Text>{SERVICES.map((item) => <TouchableOpacity key={item.name} accessibilityRole="button" style={[s.service, service === item.name && s.selected]} onPress={() => { setService(item.name); setPreview(false); }}>
+          <Text style={s.cardTitle}>{item.name}</Text><Text style={s.muted}>{item.details}</Text><Text style={s.rate}>{item.rate}</Text>
+        </TouchableOpacity>)}<Text style={s.hint}>Only Deluxe full-hookup has the $200 complete 7-night rate. Other RV services use nightly rates in this preview; advertised weekly offers need staff confirmation.</Text></View>}
+
+        {stayType && <>
+          <View style={s.guestRow}><View><Text style={s.label}>GUESTS</Text><Text style={s.hint}>Up to {capacity} for this request</Text></View><View style={s.stepper}>
+            <TouchableOpacity accessibilityLabel="Remove guest" style={s.stepButton} onPress={() => { setGuests(Math.max(1, guests - 1)); setPreview(false); }}><Text style={s.stepText}>−</Text></TouchableOpacity>
+            <Text style={s.guestNumber}>{guests}</Text>
+            <TouchableOpacity accessibilityLabel="Add guest" style={s.stepButton} onPress={() => { setGuests(Math.min(capacity, guests + 1)); setPreview(false); }}><Text style={s.stepText}>+</Text></TouchableOpacity>
+          </View></View>
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: atv }} style={[s.service, atv && s.selected]} onPress={() => { setAtv(!atv); setPreview(false); }}><Text style={s.cardTitle}>{atv ? '✓ ' : '○ '}Bring an ATV / SxS</Text><Text style={s.rate}>+$75 per stay</Text></TouchableOpacity>
+
+          <Text style={s.kicker}>03 · AVAILABILITY</Text><Text style={s.heading}>Find an open site</Text>
+          {!PUBLIC_AVAILABILITY_ENABLED ? <Notice title="Live availability pending approval" message={ERRORS.pending_approval} /> : <>
+            <TouchableOpacity style={[s.button, (Boolean(date.error) || loading) && s.disabled]} disabled={Boolean(date.error) || loading} onPress={() => void checkAvailability()}><Text style={s.buttonText}>{loading ? 'Checking dates…' : searched ? 'Refresh availability' : 'Check availability'}</Text></TouchableOpacity>
+            {loading && <View style={s.loading}><ActivityIndicator color="#203B2A" /><Text style={s.hint}>Checking live sites…</Text></View>}
+            {error && <Notice title="Could not check sites" message={ERRORS[error]} />}
+            {searched && !loading && !error && available.length === 0 && <Notice title="No sites available" message="Try other dates or another stay type. Availability may change before staff confirms a request." />}
+            {searched && !loading && !error && matching.map((unit) => <TouchableOpacity key={unit.unitId} accessibilityRole="button" disabled={!unit.isAvailable} style={[s.unit, unitId === unit.unitId && s.selected, !unit.isAvailable && s.disabled]} onPress={() => { setUnitId(unit.unitId); setPreview(false); }}><Text style={s.cardTitle}>{unit.unitId}</Text><Text style={unit.isAvailable ? s.ok : s.error}>{unit.isAvailable ? 'Available' : 'Unavailable for these dates'}</Text></TouchableOpacity>)}
+          </>}
+        </>}
+
+        {quote && <View style={s.summary}>
+          <Text style={s.summaryKicker}>ESTIMATED PRICE · NOT A RESERVATION</Text><Text style={s.summaryTitle}>Your stay at a glance</Text>
+          <Text style={s.summarySub}>{stayType}{unitId ? ` · ${unitId}` : ''} · {date.nights} nights · {guests} guests</Text>
+          <Text style={s.summarySub}>{arrival} → {departure}{choice === 'rv-site' && service ? ` · ${service}` : ''}</Text>
+          {quote.weeklyBlocks > 0 && <PriceRow label={`${quote.weeklyBlocks} × complete 7-night Deluxe block`} value={quote.weeklyBlockTotal} />}
+          {quote.remainingNights > 0 && <PriceRow label={`${quote.remainingNights} × $${quote.nightlyRate} night`} value={quote.remainingNightlyTotal} />}
+          {quote.atvTotal > 0 && <PriceRow label="ATV / SxS · per stay" value={quote.atvTotal} />}
+          <View style={s.total}><Text style={s.totalText}>Estimated total</Text><Text style={s.totalAmount}>${quote.total}</Text></View>
+          <Text style={s.disclaimer}>This base estimate includes lodging and selected ATV access only. Extra adult, child or vehicle fees for tent stays, special events and holiday rates require staff confirmation. This preview does not save a request, hold a site or charge you.</Text>
+          <TouchableOpacity style={[s.button, !canPreview && s.disabled]} disabled={!canPreview} onPress={() => setPreview(true)}><Text style={s.buttonText}>Preview request · not sent</Text></TouchableOpacity>
+          {preview && canPreview && <Notice title="Contact the ranch to request this stay" message={`Nothing has been submitted or saved. Call ${RANCH_CONFIG.ranch.phone} with these dates and site; staff will confirm current availability and pricing.`} />}
+        </View>}
+        <Text style={s.footer}>WHITE OAK RANCH · TENNESSEE RESORT & CAMPGROUND</Text>
+      </View>
+    </ScrollView>
+  </SafeAreaView>;
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F4F1E8',
-  },
+function Notice({ title, message }: { title: string; message: string }) {
+  return <View style={s.notice}><Text style={s.noticeTitle}>{title}</Text><Text style={s.noticeText}>{message}</Text></View>;
+}
+function PriceRow({ label, value }: { label: string; value: number }) {
+  return <View style={s.priceRow}><Text style={s.priceLabel}>{label}</Text><Text style={s.priceValue}>${value}</Text></View>;
+}
 
-  container: {
-    paddingBottom: 50,
-  },
-
-  header: {
-    backgroundColor: '#203B2A',
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-
-  backText: {
-    color: '#FFFFFF',
-    fontSize: 36,
-    lineHeight: 38,
-    marginTop: -3,
-  },
-
-  headerText: {
-    flex: 1,
-  },
-
-  eyebrow: {
-    color: '#D8C59D',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.8,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '800',
-    marginTop: 3,
-  },
-
-  headerSubtitle: {
-    color: '#CCD4CD',
-    fontSize: 13,
-    marginTop: 4,
-  },
-
-  intro: {
-    paddingHorizontal: 22,
-    paddingTop: 26,
-    paddingBottom: 20,
-  },
-
-  introTitle: {
-    color: '#203B2A',
-    fontSize: 25,
-    fontWeight: '800',
-  },
-
-  introText: {
-    color: '#656963',
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 7,
-  },
-
-  sectionLabel: {
-    color: '#787B76',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    marginHorizontal: 22,
-    marginBottom: 10,
-  },
-
-  stayCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 18,
-    marginBottom: 12,
-    borderRadius: 17,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-  },
-
-  stayCardSelected: {
-    borderColor: '#9B8A68',
-  },
-
-  iconBox: {
-    width: 58,
-    height: 58,
-    borderRadius: 15,
-    backgroundColor: '#EEF0E8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-
-  icon: {
-    fontSize: 29,
-  },
-
-  cardBody: {
-    flex: 1,
-  },
-
-  cardTitle: {
-    color: '#203B2A',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-
-  cardDescription: {
-    color: '#747873',
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-
-  cardPrice: {
-    color: '#9B7952',
-    fontSize: 14,
-    fontWeight: '800',
-    marginTop: 7,
-  },
-
-  cardArrow: {
-    color: '#9B8A68',
-    fontSize: 30,
-    marginLeft: 8,
-  },
-
-  packageSection: {
-    backgroundColor: '#EAE6DA',
-    marginHorizontal: 18,
-    marginTop: -2,
-    marginBottom: 16,
-    borderRadius: 18,
-    padding: 14,
-  },
-
-  packageHeading: {
-    color: '#203B2A',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-
-  packageSubheading: {
-    color: '#656963',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
-    marginBottom: 12,
-  },
-
-  packageCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 13,
-    padding: 14,
-    marginTop: 8,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-
-  featuredPackage: {
-    backgroundColor: '#FDFBF5',
-  },
-
-  packageSelected: {
-    borderColor: '#203B2A',
-  },
-
-  packageTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-
-  packageTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-
-  packageTitle: {
-    color: '#203B2A',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-
-  bestBadge: {
-    marginLeft: 8,
-    backgroundColor: '#D8C59D',
-    color: '#203B2A',
-    fontSize: 8,
-    fontWeight: '900',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 20,
-    letterSpacing: 0.7,
-  },
-
-  packageDetails: {
-    color: '#747873',
-    fontSize: 12,
-    marginTop: 4,
-    maxWidth: 205,
-  },
-
-  packagePriceArea: {
-    alignItems: 'flex-end',
-    marginLeft: 10,
-  },
-
-  packagePrice: {
-    color: '#203B2A',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  weeklyPrice: {
-    color: '#9B7952',
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 3,
-  },
-
-  selectedText: {
-    color: '#203B2A',
-    fontSize: 12,
-    fontWeight: '800',
-    marginTop: 10,
-  },
-
-  detailBox: {
-    backgroundColor: '#EAE6DA',
-    marginHorizontal: 18,
-    marginTop: -3,
-    marginBottom: 16,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: '#D6D0C2',
-  },
-
-  detailLabel: {
-    color: '#626660',
-    fontSize: 13,
-  },
-
-  detailValue: {
-    color: '#203B2A',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  nextSection: {
-    backgroundColor: '#203B2A',
-    marginHorizontal: 18,
-    marginTop: 16,
-    borderRadius: 18,
-    padding: 20,
-  },
-
-  nextTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
-  },
-
-  nextText: {
-    color: '#D6DDD7',
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 6,
-  },
-
-  continueButton: {
-    backgroundColor: '#D8C59D',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-
-  continueButtonText: {
-    color: '#203B2A',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  footer: {
-    alignItems: 'center',
-    marginTop: 34,
-  },
-
-  footerLogo: {
-    color: '#203B2A',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-
-  footerText: {
-    color: '#898C87',
-    fontSize: 11,
-    marginTop: 4,
-  },
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F4F1E8' }, page: { paddingBottom: 50 },
+  hero: { backgroundColor: '#203B2A', paddingHorizontal: 24, paddingTop: 20, paddingBottom: 34 },
+  back: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#365340', alignItems: 'center', justifyContent: 'center', marginBottom: 28 },
+  backText: { color: '#FFFFFF', fontSize: 30, lineHeight: 34 },
+  eyebrow: { color: '#D8C59D', fontSize: 11, letterSpacing: 2, fontWeight: '800' },
+  title: { color: '#FFFFFF', fontSize: 38, fontWeight: '800', marginTop: 8 },
+  heroText: { color: '#DFE5DD', fontSize: 16, lineHeight: 24, marginTop: 8, maxWidth: 520 },
+  pill: { alignSelf: 'flex-start', backgroundColor: '#D8C59D', color: '#203B2A', borderRadius: 20, paddingHorizontal: 13, paddingVertical: 7, marginTop: 22, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  content: { width: '100%', maxWidth: 760, alignSelf: 'center', paddingHorizontal: 18 },
+  kicker: { color: '#9B7952', fontSize: 11, letterSpacing: 1.8, fontWeight: '900', marginTop: 30 },
+  heading: { color: '#203B2A', fontSize: 25, fontWeight: '800', marginTop: 5, marginBottom: 14 },
+  dates: { flexDirection: 'row', gap: 10 }, dateField: { flex: 1 },
+  label: { color: '#526455', fontSize: 11, fontWeight: '900', letterSpacing: 1, marginBottom: 7 },
+  input: { backgroundColor: '#FFFFFF', borderColor: '#DDD9CE', borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 16, color: '#203B2A' },
+  error: { color: '#9E3E37', fontSize: 12, marginTop: 8, fontWeight: '700' },
+  hint: { color: '#667167', fontSize: 12, lineHeight: 18, marginTop: 8 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  card: { backgroundColor: '#FFFFFF', borderRadius: 15, borderWidth: 2, borderColor: '#FFFFFF', padding: 15, flexGrow: 1, flexBasis: 220, minWidth: 155 },
+  selected: { borderColor: '#9B7952' }, cardTitle: { color: '#203B2A', fontSize: 16, fontWeight: '800' },
+  muted: { color: '#67736A', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  rate: { color: '#9B7952', fontSize: 13, fontWeight: '800', marginTop: 8 },
+  services: { marginTop: 20 }, service: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 2, borderColor: '#FFFFFF', padding: 14, marginTop: 8 },
+  guestRow: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 15, marginTop: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 14 }, stepButton: { backgroundColor: '#E9EEE7', width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  stepText: { color: '#203B2A', fontSize: 22, lineHeight: 26 }, guestNumber: { color: '#203B2A', fontSize: 18, fontWeight: '800' },
+  button: { backgroundColor: '#D8C59D', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 13 },
+  disabled: { opacity: 0.48 }, buttonText: { color: '#203B2A', fontSize: 15, fontWeight: '900' },
+  notice: { backgroundColor: '#FFF8E8', borderColor: '#E7DAB5', borderWidth: 1, borderRadius: 14, padding: 17, marginTop: 10 },
+  noticeTitle: { color: '#4D4231', fontSize: 15, fontWeight: '800' }, noticeText: { color: '#5F5C54', fontSize: 13, lineHeight: 20, marginTop: 6 },
+  loading: { alignItems: 'center', gap: 8, padding: 16 },
+  unit: { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 2, borderColor: '#FFFFFF', padding: 14, marginTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' },
+  ok: { color: '#33704A', fontWeight: '800', fontSize: 12 },
+  summary: { backgroundColor: '#203B2A', borderRadius: 17, padding: 20, marginTop: 26 },
+  summaryKicker: { color: '#D8C59D', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
+  summaryTitle: { color: '#FFFFFF', fontSize: 23, fontWeight: '800', marginTop: 8 }, summarySub: { color: '#D6DDD7', fontSize: 13, marginTop: 5 },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 13, gap: 10 }, priceLabel: { color: '#D6DDD7', fontSize: 13, flex: 1 }, priceValue: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  total: { borderTopWidth: 1, borderTopColor: '#63766A', flexDirection: 'row', justifyContent: 'space-between', marginTop: 17, paddingTop: 15 },
+  totalText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' }, totalAmount: { color: '#D8C59D', fontSize: 23, fontWeight: '900' },
+  disclaimer: { color: '#CCD8CC', fontSize: 11, lineHeight: 17, marginTop: 15 },
+  footer: { color: '#78877C', fontSize: 10, fontWeight: '900', letterSpacing: 1.4, textAlign: 'center', marginTop: 36 },
 });
