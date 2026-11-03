@@ -1,5 +1,5 @@
 import { PUBLIC_AVAILABILITY_ENABLED } from '../constants/feature-flags';
-import type { PublicUnit } from '../data/customerAvailability';
+import { normalizePublicUnits, type PublicUnit } from '../data/customerAvailability';
 import { supabase } from '../lib/supabase';
 
 export type PublicAvailabilityError =
@@ -33,15 +33,8 @@ export async function getPublicAvailability(
         error: error.code === '22023' ? 'validation' : status === 0 ? 'connectivity' : 'unavailable',
       };
     }
-    if (!Array.isArray(data)) return { units: [], error: 'unavailable' };
-    const units: PublicUnit[] = [];
-    for (const row of data) {
-      if (typeof row?.unit_id !== 'string' || typeof row?.stay_type !== 'string' ||
-          typeof row?.is_available !== 'boolean') {
-        return { units: [], error: 'unavailable' };
-      }
-      units.push({ unitId: row.unit_id, stayType: row.stay_type, isAvailable: row.is_available });
-    }
+    const units = normalizePublicUnits(data);
+    if (!units) return { units: [], error: 'unavailable' };
     return { units, error: null };
   } catch {
     return { units: [], error: 'connectivity' };

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  availableUnitsForStay, maxGuestsForStay, staysOverlap, validateStayDates,
+  availableUnitsForStay, maxGuestsForStay, normalizePublicUnits, staysOverlap, validateStayDates,
 } from '../src/data/customerAvailability.ts';
 import { calculateLiveStayPricing } from '../src/data/liveReservationPricing.ts';
 import { PUBLIC_AVAILABILITY_ENABLED } from '../src/constants/feature-flags.ts';
@@ -42,6 +42,14 @@ test('customer capacity is bounded by accommodation', () => {
   assert.equal(maxGuestsForStay('Large Rental RV'), 8);
 });
 
+test('public response projection strips private fields and rejects malformed data', () => {
+  assert.deepEqual(normalizePublicUnits([{ unit_id: 'RV 05', stay_type: 'RV Site', is_available: false,
+    guest_name: 'private', phone: 'private', reservation_id: 'private', created_by: 'private' }]),
+    [{ unitId: 'RV 05', stayType: 'RV Site', isAvailable: false }]);
+  assert.equal(normalizePublicUnits([{ unit_id: 'RV 05', stay_type: 'RV Site' }]), null);
+  assert.equal(normalizePublicUnits({ unit_id: 'RV 05' }), null);
+});
+
 test('customer quote uses only Deluxe complete weekly blocks and one ATV fee', () => {
   for (const [nights, total] of [[6, 300], [7, 200], [8, 250], [13, 500], [14, 400]]) {
     assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights }).total, total);
@@ -54,8 +62,8 @@ test('customer quote uses only Deluxe complete weekly blocks and one ATV fee', (
 
 test('public repository uses the narrow RPC only; migration does not grant private table reads or writes', () => {
   const repo = readFileSync(new URL('../src/repositories/customer-availability-repository.ts', import.meta.url), 'utf8');
-  const migration = readFileSync(new URL('../supabase/migrations/20261102233705_public_unit_availability.sql', import.meta.url), 'utf8');
-  assert.equal(PUBLIC_AVAILABILITY_ENABLED, false);
+  const migration = readFileSync(new URL('../supabase/migrations/20261103005539_public_unit_availability.sql', import.meta.url), 'utf8');
+  assert.equal(PUBLIC_AVAILABILITY_ENABLED, true);
   assert.match(repo, /supabase\.rpc\('ranch_available_units'/);
   assert.doesNotMatch(repo, /supabase\.from\(/);
   assert.doesNotMatch(repo, /guest_name|phone|created_by/);
@@ -67,4 +75,13 @@ test('public repository uses the narrow RPC only; migration does not grant priva
   assert.doesNotMatch(migration, /grant\s+(select|insert|update|delete)\s+on\s+public\.ranch_reservations/i);
   assert.doesNotMatch(migration, /grant\s+(select|insert|update|delete)\s+on\s+public\.ranch_units/i);
   assert.doesNotMatch(migration, /create policy|alter table/i);
+});
+
+test('customer route remains request-only and staff routes stay protected', () => {
+  const booking = readFileSync(new URL('../src/app/booking.tsx', import.meta.url), 'utf8');
+  const layout = readFileSync(new URL('../src/app/_layout.tsx', import.meta.url), 'utf8');
+  assert.match(booking, /REQUEST PREVIEW ONLY/);
+  assert.match(booking, /does not save a request, hold a site or charge you/);
+  assert.doesNotMatch(booking, /supabase\.from\(|insert\(|createStaffReservation\(/);
+  assert.match(layout, /Stack\.Protected guard=\{isStaff\}/);
 });

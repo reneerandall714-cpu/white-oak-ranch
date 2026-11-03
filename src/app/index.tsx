@@ -36,7 +36,7 @@ export default function HomeScreen() {
             style={styles.primaryButton}
             onPress={() => router.push('/booking')}
           >
-            <Text style={styles.primaryButtonText}>Book Your Stay</Text>
+            <Text style={styles.primaryButtonText}>Check Dates & Rates</Text>
           </TouchableOpacity>
         </View>
 

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PUBLIC_AVAILABILITY_ENABLED } from '../constants/feature-flags';
 import { availableUnitsForStay, CUSTOMER_STAY_TYPES, maxGuestsForStay, validateStayDates, type CustomerStayChoice, type PublicUnit } from '../data/customerAvailability';
@@ -80,29 +80,31 @@ export default function BookingScreen() {
         {arrival || departure ? <Text style={date.error ? s.error : s.hint}>{date.error ?? `${date.nights} night${date.nights === 1 ? '' : 's'} · checkout day is not charged`}</Text> : null}
 
         <Text style={s.kicker}>02 · WHERE</Text><Text style={s.heading}>Choose your stay</Text>
-        <View style={s.grid}>{STAYS.map((stay) => <TouchableOpacity key={stay.key} accessibilityRole="button" style={[s.card, choice === stay.key && s.selected]} onPress={() => { setChoice(stay.key); setService(null); setGuests(2); resetAvailability(); }}>
+        <View style={s.grid}>{STAYS.map((stay) => <TouchableOpacity key={stay.key} accessibilityRole="radio" accessibilityState={{ selected: choice === stay.key }} style={[s.card, choice === stay.key && s.selected]} onPress={() => { setChoice(stay.key); setService(null); setGuests(2); resetAvailability(); }}>
           <Text style={s.cardTitle}>{stay.title}</Text><Text style={s.muted}>{stay.details}</Text><Text style={s.rate}>{stay.rate}</Text>
         </TouchableOpacity>)}</View>
 
-        {choice === 'rv-site' && <View style={s.services}><Text style={s.label}>RV SERVICE</Text>{SERVICES.map((item) => <TouchableOpacity key={item.name} accessibilityRole="button" style={[s.service, service === item.name && s.selected]} onPress={() => { setService(item.name); setPreview(false); }}>
+        {choice === 'rv-site' && <View style={s.services}><Text style={s.label}>RV SERVICE</Text>{SERVICES.map((item) => <TouchableOpacity key={item.name} accessibilityRole="radio" accessibilityState={{ selected: service === item.name }} style={[s.service, service === item.name && s.selected]} onPress={() => { setService(item.name); setPreview(false); }}>
           <Text style={s.cardTitle}>{item.name}</Text><Text style={s.muted}>{item.details}</Text><Text style={s.rate}>{item.rate}</Text>
         </TouchableOpacity>)}<Text style={s.hint}>Only Deluxe full-hookup has the $200 complete 7-night rate. Other RV services use nightly rates in this preview; advertised weekly offers need staff confirmation.</Text></View>}
 
         {stayType && <>
           <View style={s.guestRow}><View><Text style={s.label}>GUESTS</Text><Text style={s.hint}>Up to {capacity} for this request</Text></View><View style={s.stepper}>
-            <TouchableOpacity accessibilityLabel="Remove guest" style={s.stepButton} onPress={() => { setGuests(Math.max(1, guests - 1)); setPreview(false); }}><Text style={s.stepText}>−</Text></TouchableOpacity>
+            <TouchableOpacity accessibilityLabel="Remove guest" accessibilityState={{ disabled: guests <= 1 }} disabled={guests <= 1} style={s.stepButton} onPress={() => { setGuests(Math.max(1, guests - 1)); setPreview(false); }}><Text style={s.stepText}>−</Text></TouchableOpacity>
             <Text style={s.guestNumber}>{guests}</Text>
-            <TouchableOpacity accessibilityLabel="Add guest" style={s.stepButton} onPress={() => { setGuests(Math.min(capacity, guests + 1)); setPreview(false); }}><Text style={s.stepText}>+</Text></TouchableOpacity>
+            <TouchableOpacity accessibilityLabel="Add guest" accessibilityState={{ disabled: guests >= capacity }} disabled={guests >= capacity} style={s.stepButton} onPress={() => { setGuests(Math.min(capacity, guests + 1)); setPreview(false); }}><Text style={s.stepText}>+</Text></TouchableOpacity>
           </View></View>
           <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: atv }} style={[s.service, atv && s.selected]} onPress={() => { setAtv(!atv); setPreview(false); }}><Text style={s.cardTitle}>{atv ? '✓ ' : '○ '}Bring an ATV / SxS</Text><Text style={s.rate}>+$75 per stay</Text></TouchableOpacity>
 
           <Text style={s.kicker}>03 · AVAILABILITY</Text><Text style={s.heading}>Find an open site</Text>
+          <Text style={s.hint}>These results are live for your selected dates, not a hold. Staff must confirm any stay.</Text>
           {!PUBLIC_AVAILABILITY_ENABLED ? <Notice title="Live availability pending approval" message={ERRORS.pending_approval} /> : <>
             <TouchableOpacity style={[s.button, (Boolean(date.error) || loading) && s.disabled]} disabled={Boolean(date.error) || loading} onPress={() => void checkAvailability()}><Text style={s.buttonText}>{loading ? 'Checking dates…' : searched ? 'Refresh availability' : 'Check availability'}</Text></TouchableOpacity>
             {loading && <View style={s.loading}><ActivityIndicator color="#203B2A" /><Text style={s.hint}>Checking live sites…</Text></View>}
             {error && <Notice title="Could not check sites" message={ERRORS[error]} />}
             {searched && !loading && !error && available.length === 0 && <Notice title="No sites available" message="Try other dates or another stay type. Availability may change before staff confirms a request." />}
-            {searched && !loading && !error && matching.map((unit) => <TouchableOpacity key={unit.unitId} accessibilityRole="button" disabled={!unit.isAvailable} style={[s.unit, unitId === unit.unitId && s.selected, !unit.isAvailable && s.disabled]} onPress={() => { setUnitId(unit.unitId); setPreview(false); }}><Text style={s.cardTitle}>{unit.unitId}</Text><Text style={unit.isAvailable ? s.ok : s.error}>{unit.isAvailable ? 'Available' : 'Unavailable for these dates'}</Text></TouchableOpacity>)}
+            {searched && !loading && !error && <Text style={s.hint}>{available.length} of {matching.length} {stayType.toLowerCase()} units available</Text>}
+            {searched && !loading && !error && matching.map((unit) => <TouchableOpacity key={unit.unitId} accessibilityRole="radio" accessibilityState={{ selected: unitId === unit.unitId, disabled: !unit.isAvailable }} disabled={!unit.isAvailable} style={[s.unit, unitId === unit.unitId && s.selected, !unit.isAvailable && s.disabled]} onPress={() => { setUnitId(unit.unitId); setPreview(false); }}><Text style={s.cardTitle}>{unit.unitId}</Text><Text style={unit.isAvailable ? s.ok : s.error}>{unit.isAvailable ? 'Available' : 'Unavailable for these dates'}</Text></TouchableOpacity>)}
           </>}
         </>}
 
@@ -118,6 +120,9 @@ export default function BookingScreen() {
           <TouchableOpacity style={[s.button, !canPreview && s.disabled]} disabled={!canPreview} onPress={() => setPreview(true)}><Text style={s.buttonText}>Preview request · not sent</Text></TouchableOpacity>
           {preview && canPreview && <Notice title="Contact the ranch to request this stay" message={`Nothing has been submitted or saved. Call ${RANCH_CONFIG.ranch.phone} with these dates and site; staff will confirm current availability and pricing.`} />}
         </View>}
+        <TouchableOpacity accessibilityRole="link" accessibilityLabel={`Call White Oak Ranch at ${RANCH_CONFIG.ranch.phone}`} style={s.contact} onPress={() => void Linking.openURL(`tel:${RANCH_CONFIG.ranch.phone.replace(/\D/g, '')}`).catch(() => {})}>
+          <Text style={s.contactText}>Questions or trouble checking dates? Call {RANCH_CONFIG.ranch.phone}</Text>
+        </TouchableOpacity>
         <Text style={s.footer}>WHITE OAK RANCH · TENNESSEE RESORT & CAMPGROUND</Text>
       </View>
     </ScrollView>
@@ -125,7 +130,7 @@ export default function BookingScreen() {
 }
 
 function Notice({ title, message }: { title: string; message: string }) {
-  return <View style={s.notice}><Text style={s.noticeTitle}>{title}</Text><Text style={s.noticeText}>{message}</Text></View>;
+  return <View accessibilityLiveRegion="polite" style={s.notice}><Text style={s.noticeTitle}>{title}</Text><Text style={s.noticeText}>{message}</Text></View>;
 }
 function PriceRow({ label, value }: { label: string; value: number }) {
   return <View style={s.priceRow}><Text style={s.priceLabel}>{label}</Text><Text style={s.priceValue}>${value}</Text></View>;
@@ -171,5 +176,7 @@ const s = StyleSheet.create({
   total: { borderTopWidth: 1, borderTopColor: '#63766A', flexDirection: 'row', justifyContent: 'space-between', marginTop: 17, paddingTop: 15 },
   totalText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' }, totalAmount: { color: '#D8C59D', fontSize: 23, fontWeight: '900' },
   disclaimer: { color: '#CCD8CC', fontSize: 11, lineHeight: 17, marginTop: 15 },
+  contact: { backgroundColor: '#E7EDE3', borderRadius: 12, padding: 14, marginTop: 26, alignItems: 'center' },
+  contactText: { color: '#203B2A', fontSize: 13, fontWeight: '800', textAlign: 'center' },
   footer: { color: '#78877C', fontSize: 10, fontWeight: '900', letterSpacing: 1.4, textAlign: 'center', marginTop: 36 },
 });

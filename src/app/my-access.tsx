@@ -58,16 +58,16 @@ export default function MyAccessScreen() {
           <View style={styles.statusTop}>
             <View>
               <Text style={styles.statusLabel}>ACCESS STATUS</Text>
-              <Text style={styles.statusTitle}>Active</Text>
+              <Text style={styles.statusTitle}>Demo preview</Text>
             </View>
 
             <View style={styles.activeBadge}>
-              <Text style={styles.activeBadgeText}>● ACTIVE</Text>
+              <Text style={styles.activeBadgeText}>DEMO ONLY</Text>
             </View>
           </View>
 
           <Text style={styles.statusText}>
-            You currently have valid access to White Oak Ranch.
+            This screen does not verify a live pass, reservation or gate access.
           </Text>
         </View>
 
@@ -88,7 +88,7 @@ export default function MyAccessScreen() {
           <Text style={styles.gateLabel}>FRONT GATE</Text>
 
           <Text style={styles.gateTitle}>
-            {gateOpened ? 'Gate Opening...' : 'Ready for Access'}
+            {gateOpened ? 'Demo gate animation...' : 'Gate control demo'}
           </Text>
 
           <Text style={styles.gateText}>

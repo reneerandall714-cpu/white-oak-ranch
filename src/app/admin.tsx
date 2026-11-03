@@ -46,9 +46,9 @@ export default function AdminScreen() {
 
         <View style={styles.stats}>
           <StatCard label="RV Sites" value="11" subtext="Deluxe-capable" />
-          <StatCard label="Tent Sites" value="10" subtext="Available inventory" />
+          <StatCard label="Tent Sites" value="10" subtext="Total inventory" />
           <StatCard label="Rental RVs" value="2" subtext="Ranch-owned units" />
-          <StatCard label="Gate" value="Online" subtext="Access system" />
+          <StatCard label="Gate" value="Demo" subtext="No live control" />
         </View>
 
         <Text style={styles.sectionLabel}>OPERATIONS</Text>
@@ -56,7 +56,7 @@ export default function AdminScreen() {
        <AdminCard
   icon="📋"
   title="Live Reservations"
-  subtitle="Primary staff view • Supabase read-only; demo creation separate"
+  subtitle="Live listing, staff creation, editing and cancellation"
  onPress={() => router.push('/manage-reservations')}
 />
        <AdminCard

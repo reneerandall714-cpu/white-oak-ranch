@@ -1,4 +1,4 @@
--- REVIEW ONLY: do not apply without owner approval. The function returns only
+-- Applied as remote migration 20261103005539. The function returns only
 -- public unit identifiers/types and availability for a bounded date range.
 -- It does not grant anon access to ranch_units or ranch_reservations.
 -- Public traffic and rate limits should be reviewed before enabling the UI.

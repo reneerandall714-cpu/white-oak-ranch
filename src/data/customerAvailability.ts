@@ -4,6 +4,22 @@ export type PublicUnit = {
   isAvailable: boolean;
 };
 
+// Treat RPC results as untrusted. Project only approved public fields, even if
+// a future server change adds private columns to the response by mistake.
+export function normalizePublicUnits(value: unknown): PublicUnit[] | null {
+  if (!Array.isArray(value)) return null;
+  const units: PublicUnit[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== 'object') return null;
+    const fields = row as Record<string, unknown>;
+    if (typeof fields.unit_id !== 'string' ||
+      typeof fields.stay_type !== 'string' ||
+      typeof fields.is_available !== 'boolean') return null;
+    units.push({ unitId: fields.unit_id, stayType: fields.stay_type, isAvailable: fields.is_available });
+  }
+  return units;
+}
+
 export const CUSTOMER_STAY_TYPES = {
   'rv-site': 'RV Site',
   tent: 'Tent Site',
