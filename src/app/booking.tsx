@@ -1,12 +1,15 @@
 import { router } from 'expo-router';
+import { randomUUID } from 'expo-crypto';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { PUBLIC_AVAILABILITY_ENABLED } from '../constants/feature-flags';
+import { CUSTOMER_REQUEST_SUBMISSION_ENABLED, PUBLIC_AVAILABILITY_ENABLED } from '../constants/feature-flags';
+import { validateBookingRequest, type BookingRequestDraft, type BookingRequestReceipt } from '../data/bookingRequests';
 import { availableUnitsForStay, CUSTOMER_STAY_TYPES, maxGuestsForStay, validateStayDates, type CustomerStayChoice, type PublicUnit } from '../data/customerAvailability';
 import { calculateLiveStayPricing } from '../data/liveReservationPricing';
 import { RANCH_CONFIG, type RVServiceName } from '../data/ranchConfig';
 import { getPublicAvailability, type PublicAvailabilityError } from '../repositories/customer-availability-repository';
+import { BOOKING_REQUEST_ERROR_TEXT, submitBookingRequest, type BookingRequestError } from '../repositories/booking-request-repository';
 
 const STAYS: { key: CustomerStayChoice; title: string; details: string; rate: string }[] = [
   { key: 'rv-site', title: 'RV site', details: '11 sites · choose your service', rate: 'From $25/night' },
@@ -39,6 +42,16 @@ export default function BookingScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PublicAvailabilityError | null>(null);
   const [preview, setPreview] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<BookingRequestError | null>(null);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [submission, setSubmission] = useState<{ receipt: BookingRequestReceipt; draft: BookingRequestDraft } | null>(null);
+  const submitLock = useRef(false);
+  const requestKey = useRef<{ fingerprint: string; key: string } | null>(null);
   const sequence = useRef(0);
   const stayType = choice ? CUSTOMER_STAY_TYPES[choice] : null;
   const date = validateStayDates(arrival, departure);
@@ -49,18 +62,57 @@ export default function BookingScreen() {
   const available = stayType ? availableUnitsForStay(units, stayType) : [];
   const canPreview = searched && !loading && !error && Boolean(unitId && available.some((unit) => unit.unitId === unitId)) && canQuote && guests >= 1 && guests <= capacity;
 
+  function resetRequest() {
+    setSubmitError(null);
+    setValidationMessage(null);
+    setPreview(false);
+  }
+
   function resetAvailability() {
     sequence.current += 1;
-    setUnits([]); setUnitId(null); setSearched(false); setLoading(false); setError(null); setPreview(false);
+    setUnits([]); setUnitId(null); setSearched(false); setLoading(false); setError(null); resetRequest();
   }
   async function checkAvailability() {
     if (!stayType || date.error || !PUBLIC_AVAILABILITY_ENABLED) return;
     const current = ++sequence.current;
-    setSearched(true); setLoading(true); setError(null); setUnitId(null); setPreview(false);
+    setSearched(true); setLoading(true); setError(null); setUnitId(null); resetRequest();
     const result = await getPublicAvailability(arrival, departure);
     if (current !== sequence.current) return;
     setUnits(result.units); setError(result.error); setLoading(false);
   }
+
+  async function submitRequest() {
+    if (submitLock.current || !CUSTOMER_REQUEST_SUBMISSION_ENABLED || !canPreview || !stayType || !unitId) return;
+    const draft = { guestName, email, phone, note, unit: unitId, stayType, rvService: choice === 'rv-site' ? service : null,
+      arrival, departure, guests, atvAccess: atv };
+    const validation = validateBookingRequest(draft);
+    if (validation) { setValidationMessage(validation); setSubmitError('validation'); return; }
+    submitLock.current = true;
+    setSubmitting(true); setSubmitError(null);
+    try {
+      // Reuse the same key after a timeout or refresh with identical details.
+      const fingerprint = JSON.stringify(draft);
+      if (requestKey.current?.fingerprint !== fingerprint) requestKey.current = { fingerprint, key: randomUUID() };
+      const result = await submitBookingRequest(draft, requestKey.current.key);
+      if (result.receipt) setSubmission({ receipt: result.receipt, draft });
+      else setSubmitError(result.error ?? 'unavailable');
+    } catch { setSubmitError('unavailable'); }
+    finally { submitLock.current = false; setSubmitting(false); }
+  }
+
+  if (submission) return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={[s.content, { paddingTop: 38 }]}>
+    <Text style={s.kicker}>WHITE OAK RANCH</Text><Text style={s.heading}>Request received</Text>
+    <Notice title={submission.receipt.status === 'PENDING' ? 'PENDING REVIEW' : submission.receipt.status}
+      message="Staff must review and confirm this request. This receipt is not a reservation, a site hold or a payment. Availability may change before approval." />
+    <View style={[s.summary, { marginTop: 20 }]}>
+      <Text style={s.summaryKicker}>REQUEST REFERENCE</Text><Text selectable style={s.summaryTitle}>{submission.receipt.requestId}</Text>
+      <Text style={s.summarySub}>{submission.draft.unit} · {submission.draft.stayType} · {submission.draft.arrival} to {submission.draft.departure}</Text>
+      <Text style={s.summarySub}>{submission.draft.guests} guests · {submission.draft.rvService ?? 'No RV service'} · ATV {submission.draft.atvAccess ? 'yes' : 'no'}</Text>
+      <View style={s.total}><Text style={s.totalText}>Quoted total</Text><Text style={s.totalAmount}>${submission.receipt.quotedTotal}</Text></View>
+    </View>
+    <Text style={s.hint}>Save the reference and contact the ranch if you need to follow up. No confirmation email is sent yet.</Text>
+    <TouchableOpacity style={s.button} onPress={() => router.replace('/')}><Text style={s.buttonText}>Return home</Text></TouchableOpacity>
+  </ScrollView></SafeAreaView>;
 
   return <SafeAreaView style={s.safe}>
     <ScrollView contentContainerStyle={s.page} keyboardShouldPersistTaps="handled">
@@ -69,7 +121,7 @@ export default function BookingScreen() {
         <Text style={s.eyebrow}>WHITE OAK RANCH · DUNLAP, TENNESSEE</Text>
         <Text style={s.title}>Plan your stay</Text>
         <Text style={s.heroText}>Find open space under the oaks. Explore dates, a site and a transparent price.</Text>
-        <Text style={s.pill}>REQUEST PREVIEW ONLY · NO ONLINE BOOKING</Text>
+        <Text style={s.pill}>{CUSTOMER_REQUEST_SUBMISSION_ENABLED ? 'REQUEST A STAY · STAFF CONFIRMATION REQUIRED' : 'REQUEST PREVIEW ONLY · NO ONLINE BOOKING'}</Text>
       </View>
       <View style={s.content}>
         <Text style={s.kicker}>01 · WHEN</Text><Text style={s.heading}>Pick your dates</Text>
@@ -84,17 +136,17 @@ export default function BookingScreen() {
           <Text style={s.cardTitle}>{stay.title}</Text><Text style={s.muted}>{stay.details}</Text><Text style={s.rate}>{stay.rate}</Text>
         </TouchableOpacity>)}</View>
 
-        {choice === 'rv-site' && <View style={s.services}><Text style={s.label}>RV SERVICE</Text>{SERVICES.map((item) => <TouchableOpacity key={item.name} accessibilityRole="radio" accessibilityState={{ selected: service === item.name }} style={[s.service, service === item.name && s.selected]} onPress={() => { setService(item.name); setPreview(false); }}>
+        {choice === 'rv-site' && <View style={s.services}><Text style={s.label}>RV SERVICE</Text>{SERVICES.map((item) => <TouchableOpacity key={item.name} accessibilityRole="radio" accessibilityState={{ selected: service === item.name }} style={[s.service, service === item.name && s.selected]} onPress={() => { setService(item.name); resetRequest(); }}>
           <Text style={s.cardTitle}>{item.name}</Text><Text style={s.muted}>{item.details}</Text><Text style={s.rate}>{item.rate}</Text>
         </TouchableOpacity>)}<Text style={s.hint}>Only Deluxe full-hookup has the $200 complete 7-night rate. Other RV services use nightly rates in this preview; advertised weekly offers need staff confirmation.</Text></View>}
 
         {stayType && <>
           <View style={s.guestRow}><View><Text style={s.label}>GUESTS</Text><Text style={s.hint}>Up to {capacity} for this request</Text></View><View style={s.stepper}>
-            <TouchableOpacity accessibilityLabel="Remove guest" accessibilityState={{ disabled: guests <= 1 }} disabled={guests <= 1} style={s.stepButton} onPress={() => { setGuests(Math.max(1, guests - 1)); setPreview(false); }}><Text style={s.stepText}>−</Text></TouchableOpacity>
+            <TouchableOpacity accessibilityLabel="Remove guest" accessibilityState={{ disabled: guests <= 1 }} disabled={guests <= 1} style={s.stepButton} onPress={() => { setGuests(Math.max(1, guests - 1)); resetRequest(); }}><Text style={s.stepText}>−</Text></TouchableOpacity>
             <Text style={s.guestNumber}>{guests}</Text>
-            <TouchableOpacity accessibilityLabel="Add guest" accessibilityState={{ disabled: guests >= capacity }} disabled={guests >= capacity} style={s.stepButton} onPress={() => { setGuests(Math.min(capacity, guests + 1)); setPreview(false); }}><Text style={s.stepText}>+</Text></TouchableOpacity>
+            <TouchableOpacity accessibilityLabel="Add guest" accessibilityState={{ disabled: guests >= capacity }} disabled={guests >= capacity} style={s.stepButton} onPress={() => { setGuests(Math.min(capacity, guests + 1)); resetRequest(); }}><Text style={s.stepText}>+</Text></TouchableOpacity>
           </View></View>
-          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: atv }} style={[s.service, atv && s.selected]} onPress={() => { setAtv(!atv); setPreview(false); }}><Text style={s.cardTitle}>{atv ? '✓ ' : '○ '}Bring an ATV / SxS</Text><Text style={s.rate}>+$75 per stay</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: atv }} style={[s.service, atv && s.selected]} onPress={() => { setAtv(!atv); resetRequest(); }}><Text style={s.cardTitle}>{atv ? '✓ ' : '○ '}Bring an ATV / SxS</Text><Text style={s.rate}>+$75 per stay</Text></TouchableOpacity>
 
           <Text style={s.kicker}>03 · AVAILABILITY</Text><Text style={s.heading}>Find an open site</Text>
           <Text style={s.hint}>These results are live for your selected dates, not a hold. Staff must confirm any stay.</Text>
@@ -104,7 +156,7 @@ export default function BookingScreen() {
             {error && <Notice title="Could not check sites" message={ERRORS[error]} />}
             {searched && !loading && !error && available.length === 0 && <Notice title="No sites available" message="Try other dates or another stay type. Availability may change before staff confirms a request." />}
             {searched && !loading && !error && <Text style={s.hint}>{available.length} of {matching.length} {stayType.toLowerCase()} units available</Text>}
-            {searched && !loading && !error && matching.map((unit) => <TouchableOpacity key={unit.unitId} accessibilityRole="radio" accessibilityState={{ selected: unitId === unit.unitId, disabled: !unit.isAvailable }} disabled={!unit.isAvailable} style={[s.unit, unitId === unit.unitId && s.selected, !unit.isAvailable && s.disabled]} onPress={() => { setUnitId(unit.unitId); setPreview(false); }}><Text style={s.cardTitle}>{unit.unitId}</Text><Text style={unit.isAvailable ? s.ok : s.error}>{unit.isAvailable ? 'Available' : 'Unavailable for these dates'}</Text></TouchableOpacity>)}
+            {searched && !loading && !error && matching.map((unit) => <TouchableOpacity key={unit.unitId} accessibilityRole="radio" accessibilityState={{ selected: unitId === unit.unitId, disabled: !unit.isAvailable }} disabled={!unit.isAvailable} style={[s.unit, unitId === unit.unitId && s.selected, !unit.isAvailable && s.disabled]} onPress={() => { setUnitId(unit.unitId); resetRequest(); }}><Text style={s.cardTitle}>{unit.unitId}</Text><Text style={unit.isAvailable ? s.ok : s.error}>{unit.isAvailable ? 'Available' : 'Unavailable for these dates'}</Text></TouchableOpacity>)}
           </>}
         </>}
 
@@ -116,9 +168,22 @@ export default function BookingScreen() {
           {quote.remainingNights > 0 && <PriceRow label={`${quote.remainingNights} × $${quote.nightlyRate} night`} value={quote.remainingNightlyTotal} />}
           {quote.atvTotal > 0 && <PriceRow label="ATV / SxS · per stay" value={quote.atvTotal} />}
           <View style={s.total}><Text style={s.totalText}>Estimated total</Text><Text style={s.totalAmount}>${quote.total}</Text></View>
-          <Text style={s.disclaimer}>This base estimate includes lodging and selected ATV access only. Extra adult, child or vehicle fees for tent stays, special events and holiday rates require staff confirmation. This preview does not save a request, hold a site or charge you.</Text>
-          <TouchableOpacity style={[s.button, !canPreview && s.disabled]} disabled={!canPreview} onPress={() => setPreview(true)}><Text style={s.buttonText}>Preview request · not sent</Text></TouchableOpacity>
-          {preview && canPreview && <Notice title="Contact the ranch to request this stay" message={`Nothing has been submitted or saved. Call ${RANCH_CONFIG.ranch.phone} with these dates and site; staff will confirm current availability and pricing.`} />}
+          <Text style={s.disclaimer}>This base estimate includes lodging and selected ATV access only. Extra adult, child or vehicle fees for tent stays, special events and holiday rates require staff confirmation. {CUSTOMER_REQUEST_SUBMISSION_ENABLED ? 'A request does not hold a site, guarantee a reservation or charge you.' : 'This preview does not save a request, hold a site or charge you.'}</Text>
+          {CUSTOMER_REQUEST_SUBMISSION_ENABLED ? <>
+            <Text style={[s.label, { marginTop: 18 }]}>YOUR NAME</Text>
+            <TextInput accessibilityLabel="Your name" autoComplete="name" style={s.input} value={guestName} maxLength={200} onChangeText={(value) => { setGuestName(value); resetRequest(); }} />
+            <Text style={[s.label, { marginTop: 12 }]}>EMAIL OR PHONE (AT LEAST ONE)</Text>
+            <TextInput accessibilityLabel="Email address" autoComplete="email" keyboardType="email-address" autoCapitalize="none" style={s.input} value={email} maxLength={254} onChangeText={(value) => { setEmail(value); resetRequest(); }} />
+            <TextInput accessibilityLabel="Phone number" autoComplete="tel" keyboardType="phone-pad" style={[s.input, { marginTop: 8 }]} value={phone} maxLength={30} onChangeText={(value) => { setPhone(value); resetRequest(); }} />
+            <Text style={[s.label, { marginTop: 12 }]}>NOTE (OPTIONAL)</Text>
+            <TextInput accessibilityLabel="Note for staff" multiline style={s.input} value={note} maxLength={1000} onChangeText={(value) => { setNote(value); resetRequest(); }} />
+            <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: !canPreview || submitting }} style={[s.button, (!canPreview || submitting) && s.disabled]} disabled={!canPreview || submitting} onPress={() => void submitRequest()}><Text style={s.buttonText}>{submitting ? 'Sending request…' : 'Send booking request'}</Text></TouchableOpacity>
+            {submitting && <ActivityIndicator color="#D8C59D" />}
+            {submitError && <Notice title="Request not sent" message={validationMessage ?? BOOKING_REQUEST_ERROR_TEXT[submitError]} />}
+          </> : <>
+            <TouchableOpacity style={[s.button, !canPreview && s.disabled]} disabled={!canPreview} onPress={() => setPreview(true)}><Text style={s.buttonText}>Preview request · not sent</Text></TouchableOpacity>
+            {preview && canPreview && <Notice title="Contact the ranch to request this stay" message={`Nothing has been submitted or saved. Call ${RANCH_CONFIG.ranch.phone} with these dates and site; staff will confirm current availability and pricing.`} />}
+          </>}
         </View>}
         <TouchableOpacity accessibilityRole="link" accessibilityLabel={`Call White Oak Ranch at ${RANCH_CONFIG.ranch.phone}`} style={s.contact} onPress={() => void Linking.openURL(`tel:${RANCH_CONFIG.ranch.phone.replace(/\D/g, '')}`).catch(() => {})}>
           <Text style={s.contactText}>Questions or trouble checking dates? Call {RANCH_CONFIG.ranch.phone}</Text>

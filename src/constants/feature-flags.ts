@@ -10,3 +10,8 @@ export const LIVE_WEEKLY_RESERVATION_PRICING_ENABLED = true;
 // Enabled after remote migration 20261103005539 passed anonymous API tests.
 // This is read-only. Never fall back to private table reads or enable customer writes.
 export const PUBLIC_AVAILABILITY_ENABLED = true;
+
+// Migration 20261103012314 is review-only. Do not enable until installed,
+// permissions and anonymous/staff flows are verified in a staging clone.
+export const CUSTOMER_REQUEST_SUBMISSION_ENABLED = false;
+export const STAFF_BOOKING_REQUESTS_ENABLED = false;

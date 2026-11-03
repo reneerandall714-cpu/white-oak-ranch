@@ -24,6 +24,7 @@ function RootNavigator() {
       <Stack.Protected guard={isStaff}>
         <Stack.Screen name="admin" />
         <Stack.Screen name="manage-reservations" />
+        <Stack.Screen name="staff-booking-requests" />
         <Stack.Screen name="new-reservation" />
         <Stack.Screen name="staff-new-reservation" />
         <Stack.Screen name="staff-reservation-detail" />

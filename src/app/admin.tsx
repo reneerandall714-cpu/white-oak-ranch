@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useStaffAuth } from '../contexts/staff-auth-context';
+import { STAFF_BOOKING_REQUESTS_ENABLED } from '../constants/feature-flags';
 
 export default function AdminScreen() {
   const { error, isLoading, signOut } = useStaffAuth();
@@ -58,6 +59,12 @@ export default function AdminScreen() {
   title="Live Reservations"
   subtitle="Live listing, staff creation, editing and cancellation"
  onPress={() => router.push('/manage-reservations')}
+/>
+       <AdminCard
+  icon="✉"
+  title="Booking requests"
+  subtitle={STAFF_BOOKING_REQUESTS_ENABLED ? 'Review pending, approved and rejected requests' : 'Staff review inbox · pending backend approval'}
+  onPress={() => router.push('/staff-booking-requests')}
 />
        <AdminCard
   icon="🎟️"
