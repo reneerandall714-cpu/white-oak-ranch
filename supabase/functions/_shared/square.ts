@@ -75,7 +75,10 @@ export async function ensureLink(prepared: Prepared) {
       },
       checkout_options: { allow_tipping: false },
       payment_note: `White Oak Ranch payment ${prepared.payment_id}`,
-      ...(prepared.email ? { pre_populated_data: { buyer_email: prepared.email } } : {}),
+      // Square Sandbox rejects reserved example.com addresses used by synthetic guests.
+      // Keep the address on the local booking, but let the test checkout collect it.
+      ...(prepared.email && !/@example\.com$/i.test(prepared.email)
+        ? { pre_populated_data: { buyer_email: prepared.email } } : {}),
     }),
   });
   const link = body.payment_link;
