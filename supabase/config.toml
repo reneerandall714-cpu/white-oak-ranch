@@ -1,0 +1,12 @@
+# Sandbox functions are disabled unless SQUARE_ENV=sandbox and all sandbox
+# secrets are supplied. Production deployment requires separate approval.
+[functions.square-checkout]
+verify_jwt = false
+[functions.square-webhook]
+verify_jwt = false
+[functions.square-expire-holds]
+verify_jwt = false
+[functions.square-refund]
+verify_jwt = true
+[functions.square-cancel-booking]
+verify_jwt = true

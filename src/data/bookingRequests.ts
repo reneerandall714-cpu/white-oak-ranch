@@ -2,7 +2,7 @@ import { maxGuestsForStay, validateStayDates } from './customerAvailability.ts';
 import { calculateLiveStayPricing } from './liveReservationPricing.ts';
 import type { RVServiceName } from './ranchConfig.ts';
 
-export type BookingRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type BookingRequestStatus = 'PENDING' | 'AWAITING_PAYMENT' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'PAYMENT_REVIEW' | 'CANCELLED';
 export type BookingRequestDraft = {
   guestName: string;
   email: string;
@@ -26,6 +26,10 @@ export type StaffBookingRequest = BookingRequestDraft & BookingRequestReceipt & 
   decidedAt: string | null;
   decisionNote: string | null;
   reservationId: string | null;
+  checkoutToken: string | null;
+  holdExpiresAt: string | null;
+  balanceDueCents: number | null;
+  balanceDueOn: string | null;
 };
 
 export function validateBookingRequest(draft: BookingRequestDraft): string | null {
@@ -52,7 +56,7 @@ export function normalizeBookingRequestReceipt(value: unknown): BookingRequestRe
   if (!row || typeof row !== 'object') return null;
   const fields = row as Record<string, unknown>;
   if (typeof fields.request_id !== 'string' || !/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(fields.request_id) ||
-      !['PENDING', 'APPROVED', 'REJECTED'].includes(String(fields.request_status)) ||
+      !['PENDING', 'AWAITING_PAYMENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'PAYMENT_REVIEW', 'CANCELLED'].includes(String(fields.request_status)) ||
       (typeof fields.quoted_total !== 'number' && typeof fields.quoted_total !== 'string')) return null;
   const total = Number(fields.quoted_total);
   if (!Number.isFinite(total) || total < 0) return null;

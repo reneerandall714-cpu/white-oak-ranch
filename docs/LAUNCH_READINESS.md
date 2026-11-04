@@ -1,6 +1,14 @@
 # White Oak Ranch launch readiness
 
-## Job #12 staging status
+## Current V1 direction: Square Sandbox payments (2026-11-04)
+
+The owner now requires customer choice between full payment and an owner-configured deposit, with a separately payable balance. The prior request-only, no-payment plan below is historical and is superseded for V1. A review-only [Square Sandbox migration](../supabase/migrations/20261104190000_square_sandbox_payments.sql), server-only [Edge Functions](../supabase/functions/), and customer/staff screens are prepared on a separate feature branch. The database defaults to full payment and day pass checkout disabled until the owner sets terms and rates. A staff approval places a 30-minute unpaid hold; verified initial payment alone confirms the reservation. All public request and payment flags remain disabled.
+
+Docker became available on 2026-11-04. The isolated local Supabase stack applied the synthetic baseline and four reviewed migrations, and 17/17 guarded database integration tests passed; see [the staging report](./STAGING_TEST_REPORT.md). No Square Sandbox credentials, webhook subscription, or reachable isolated function URL was available, so actual checkout, webhook, refund, and expiration processing remain untested. The [manual local workflow](../.github/workflows/manual-local-staging.yml) could not be dispatched while it exists only on this feature branch. Do not merge or deploy the payment migration until the Edge Functions and expiration process pass Square Sandbox tests and review. Production Supabase `wagmelaupruptnzwjjta`, live merchant credentials, real reservations, and RV 05 on November 15–22, 2026 remain untouched.
+
+Launch still requires an owner-approved deposit policy, due-date policy, day pass rates, cancellation/refund policy, signed Square webhook subscription, scheduled expiration reconciliation, late/disputed-payment handling, manual customer contact process, abuse controls, staff Auth hardening, and explicit production rollout approval. The existing direct staff reservation INSERT/UPDATE privilege mismatch also needs an authorized design and test; this payment migration does not grant those privileges.
+
+## Job #12 staging status (historical, 2026-11-02)
 
 An isolated environment could **not** be created on the current machine: no container/Postgres runtime is installed, and no second Supabase project or branch exists. A potentially billable cloud resource awaits explicit owner cost approval. **No staging SQL was applied, no database integration test ran, and no production database was changed.** The [staging runbook](../staging/README.md), [synthetic-only baseline](../staging/00_ranch_baseline.sql), [guarded integration suite](../staging/integration.test.mjs), and [evidence report](./STAGING_TEST_REPORT.md) are prepared for execution after provisioning. The app now requires both an isolated staging target and an explicit verified-backend marker before its request flags can turn on; production remains off. An amber staging banner identifies staging builds.
 

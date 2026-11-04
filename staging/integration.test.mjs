@@ -25,6 +25,8 @@ let ordinary;
 const users = [];
 const requests = [];
 const reservations = [];
+const dayPasses = [];
+let fullPaymentId;
 const runId = randomUUID().slice(0, 8);
 const contact = (label) => `wor-${runId}-${label}@example.invalid`;
 function datePlus(days) {
@@ -79,7 +81,7 @@ before(async () => {
   assert.equal(marker.data.id, 'WHITE_OAK_STAGING_ONLY_2026', 'Refusing target without staging sentinel');
   // A disposable database starts empty; refuse a populated target rather than
   // assuming that a non-production hostname contains no real people.
-  for (const table of ['ranch_staff', 'ranch_reservations', 'ranch_booking_requests']) {
+  for (const table of ['ranch_staff', 'ranch_reservations', 'ranch_booking_requests', 'ranch_payments', 'ranch_day_pass_orders']) {
     const existing = await admin.from(table).select('*', { count: 'exact', head: true });
     assert.ifError(existing.error);
     assert.equal(existing.count, 0, `Refusing populated staging table ${table}`);
@@ -93,6 +95,27 @@ before(async () => {
 
 after(async () => {
   // Exact synthetic IDs only; never bulk-delete or touch a production URL.
+  if (requests.length) {
+    const paymentRows = await admin.from('ranch_payments').select('id').in('request_id', [...new Set(requests)]);
+    if (!paymentRows.error && paymentRows.data.length) {
+      const ids = paymentRows.data.map((row) => row.id);
+      assert.ifError((await admin.from('ranch_refund_intents').delete().in('payment_id', ids)).error);
+      assert.ifError((await admin.from('ranch_payment_refunds').delete().in('payment_id', ids)).error);
+      assert.ifError((await admin.from('ranch_payments').delete().in('id', ids)).error);
+    }
+  }
+  if (dayPasses.length) {
+    const paymentRows = await admin.from('ranch_payments').select('id').in('day_pass_id', dayPasses);
+    if (!paymentRows.error && paymentRows.data.length) {
+      const ids = paymentRows.data.map((row) => row.id);
+      assert.ifError((await admin.from('ranch_refund_intents').delete().in('payment_id', ids)).error);
+      assert.ifError((await admin.from('ranch_payment_refunds').delete().in('payment_id', ids)).error);
+      assert.ifError((await admin.from('ranch_payments').delete().in('id', ids)).error);
+    }
+    assert.ifError((await admin.from('ranch_day_pass_orders').delete().in('id', dayPasses)).error);
+  }
+  assert.ifError((await admin.from('ranch_payment_events').delete().like('event_id', 'test:' + runId + ':%')).error);
+  if (requests.length) assert.ifError((await admin.from('ranch_payment_cancellations').delete().in('request_id', [...new Set(requests)])).error);
   for (const id of [...new Set(requests)]) {
     const row = await admin.from('ranch_booking_requests').select('reservation_id').eq('id', id).maybeSingle();
     if (row.data?.reservation_id) reservations.push(row.data.reservation_id);
@@ -114,7 +137,9 @@ test('anonymous availability exposes 23 public units and no private fields', asy
 });
 
 test('anonymous and ordinary users cannot inspect or mutate private records', async () => {
-  for (const table of ['ranch_booking_requests', 'ranch_reservations', 'ranch_staff', 'ranch_staging_marker']) {
+  for (const table of ['ranch_booking_requests', 'ranch_reservations', 'ranch_staff',
+    'ranch_staging_marker', 'ranch_payments', 'ranch_day_pass_orders',
+    'ranch_payment_events', 'ranch_payment_refunds', 'ranch_refund_intents']) {
     const read = await anon.from(table).select('*').limit(1);
     assert.ok(read.error || read.data.length === 0, `anonymous read exposed ${table}`);
     const nonstaff = await ordinary.from(table).select('*').limit(1);
@@ -134,6 +159,44 @@ test('anonymous and ordinary users cannot inspect or mutate private records', as
       assert.ok(deletion.error || deletion.data.length === 0);
     }
   }
+});
+
+test('staff direct reservation INSERT and UPDATE remain ungranted', async () => {
+  const user = await staff.auth.getUser();
+  const inserted = await staff.from('ranch_reservations').insert({
+    guest_name: 'STAGING TEST ONLY', phone: null, unit: 'RV 06',
+    stay_type: 'RV Site', rv_service: 'Parking Only',
+    arrival: laterArrival, departure: laterDeparture, guests: 1, atv_access: false,
+    nightly_rate: 25, total: 175, status: 'CONFIRMED',
+    created_by: user.data.user.id,
+  });
+  assert.ok(inserted.error, 'staff direct INSERT unexpectedly succeeded');
+  const updated = await staff.from('ranch_reservations').update({ status: 'CANCELLED' })
+    .eq('id', randomUUID()).select();
+  assert.ok(updated.error || updated.data.length === 0, 'staff direct UPDATE unexpectedly succeeded');
+});
+
+test('only an owner can change deposit and day pass settings', async () => {
+  const staffUser = await staff.auth.getUser();
+  const ordinaryUpdate = await ordinary.from('ranch_payment_settings')
+    .update({ deposit_type: 'PERCENT', deposit_value: 10 }).eq('id', true).select('deposit_type');
+  assert.ok(ordinaryUpdate.error || ordinaryUpdate.data.length === 0);
+  const staffUpdate = await staff.from('ranch_payment_settings')
+    .update({ deposit_type: 'PERCENT', deposit_value: 10 }).eq('id', true).select('deposit_type');
+  assert.ok(staffUpdate.error || staffUpdate.data.length === 0);
+  assert.ifError((await admin.from('ranch_staff').update({ role: 'owner' })
+    .eq('user_id', staffUser.data.user.id)).error);
+  const ownerUpdate = await staff.from('ranch_payment_settings').update({
+    deposit_type: 'PERCENT', deposit_value: 10, balance_due_days_before_arrival: 7,
+  }).eq('id', true).select('deposit_type,deposit_value').single();
+  assert.ifError(ownerUpdate.error);
+  assert.equal(ownerUpdate.data.deposit_type, 'PERCENT');
+  assert.equal(Number(ownerUpdate.data.deposit_value), 10);
+  assert.ifError((await staff.from('ranch_payment_settings').update({
+    deposit_type: 'FULL', deposit_value: 0, balance_due_days_before_arrival: 0,
+  }).eq('id', true)).error);
+  assert.ifError((await admin.from('ranch_staff').update({ role: 'staff' })
+    .eq('user_id', staffUser.data.user.id)).error);
 });
 
 test('server rejects invalid dates, unit/type, guests, contacts, oversized fields and client totals', async () => {
@@ -183,13 +246,47 @@ test('submission is pending, quoted by server, idempotent and does not hold inve
     p_request_id: first.data[0].request_id, p_decision: 'APPROVED', p_decision_note: 'Synthetic approval',
   });
   assert.ifError(approved.error);
-  assert.equal(approved.data[0].request_status, 'APPROVED');
+  assert.equal(approved.data[0].request_status, 'AWAITING_PAYMENT');
   assert.ok(approved.data[0].reservation_id);
   const booking = await admin.from('ranch_reservations').select('id,total,status,nightly_rate').eq('id', approved.data[0].reservation_id).single();
   assert.ifError(booking.error);
   assert.equal(Number(booking.data.total), 275);
   assert.equal(Number(booking.data.nightly_rate), 50);
-  assert.equal(booking.data.status, 'CONFIRMED');
+  assert.equal(booking.data.status, 'PENDING');
+  const token = await admin.from('ranch_booking_requests').select('checkout_token')
+    .eq('id', first.data[0].request_id).single();
+  assert.ifError(token.error);
+  const prepared = await admin.rpc('ranch_prepare_initial_payment', {
+    p_token: token.data.checkout_token, p_choice: 'FULL',
+  });
+  assert.ifError(prepared.error);
+  assert.equal(prepared.data[0].amount_cents, 27500);
+  assert.equal(prepared.data[0].balance_cents, 0);
+  const paymentId = prepared.data[0].payment_id;
+  fullPaymentId = paymentId;
+  const orderId = 'test-' + runId + '-full';
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: paymentId, p_link_id: 'link-' + runId + '-full',
+    p_order_id: orderId, p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  const paid = await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':full', p_event_type: 'payment.updated',
+    p_order_id: orderId, p_square_payment_id: 'pay-' + runId + '-full',
+    p_amount_cents: 27500, p_status: 'COMPLETED',
+    p_receipt_url: 'https://squareup.com/receipt/SYNTHETIC', p_receipt_number: 'TEST',
+  });
+  assert.ifError(paid.error);
+  assert.equal(paid.data, 'confirmed');
+  const replayed = await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':full', p_event_type: 'payment.updated',
+    p_order_id: orderId, p_square_payment_id: 'pay-' + runId + '-full',
+    p_amount_cents: 27500, p_status: 'COMPLETED',
+    p_receipt_url: null, p_receipt_number: null,
+  });
+  assert.ifError(replayed.error);
+  assert.equal(replayed.data, 'duplicate');
+  const confirmed = await admin.from('ranch_reservations').select('status').eq('id', booking.data.id).single();
+  assert.equal(confirmed.data.status, 'CONFIRMED');
   const afterApproval = await anon.rpc('ranch_available_units', { p_arrival: arrival, p_departure: departure });
   assert.ifError(afterApproval.error);
   assert.equal(afterApproval.data.find((row) => row.unit_id === 'RV 05').is_available, false);
@@ -258,5 +355,314 @@ test('concurrent approvals cannot double-book one site; losing request remains p
   assert.equal(bookings.data.length, 1);
   const decisions = await admin.from('ranch_booking_requests').select('status,reservation_id').in('id', ids);
   assert.ifError(decisions.error);
-  assert.deepEqual(decisions.data.map((row) => row.status).sort(), ['APPROVED', 'PENDING']);
+  assert.deepEqual(decisions.data.map((row) => row.status).sort(), ['AWAITING_PAYMENT', 'PENDING']);
+});
+
+test('deposit confirms only after initial payment; a separate balance link settles the remainder', async () => {
+  assert.ifError((await admin.from('ranch_payment_settings').update({
+    deposit_type: 'PERCENT', deposit_value: 25, balance_due_days_before_arrival: 7,
+  }).eq('id', true)).error);
+  const submitted = await submit(draft({ p_unit: 'RV 08', p_email: contact('deposit') }));
+  assert.ifError(submitted.error);
+  const id = submitted.data[0].request_id;
+  assert.ifError((await staff.rpc('ranch_decide_booking_request', {
+    p_request_id: id, p_decision: 'APPROVED', p_decision_note: null,
+  })).error);
+  const row = await admin.from('ranch_booking_requests').select('checkout_token,reservation_id').eq('id', id).single();
+  const prepared = await admin.rpc('ranch_prepare_initial_payment', {
+    p_token: row.data.checkout_token, p_choice: 'DEPOSIT',
+  });
+  assert.ifError(prepared.error);
+  assert.equal(prepared.data[0].amount_cents, 5000);
+  assert.equal(prepared.data[0].balance_cents, 15000);
+  const before = await admin.from('ranch_reservations').select('status').eq('id', row.data.reservation_id).single();
+  assert.equal(before.data.status, 'PENDING');
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: prepared.data[0].payment_id, p_link_id: 'link-' + runId + '-deposit',
+    p_order_id: 'test-' + runId + '-deposit', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  assert.ifError((await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':deposit', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-deposit', p_square_payment_id: 'pay-' + runId + '-deposit',
+    p_amount_cents: 5000, p_status: 'COMPLETED', p_receipt_url: null, p_receipt_number: null,
+  })).error);
+  const after = await admin.from('ranch_booking_requests').select('status,balance_due_cents,balance_due_on')
+    .eq('id', id).single();
+  assert.equal(after.data.status, 'APPROVED');
+  assert.equal(after.data.balance_due_cents, 15000);
+  assert.ok(after.data.balance_due_on);
+  const balance = await admin.rpc('ranch_prepare_balance_payment', { p_request_id: id });
+  assert.ifError(balance.error);
+  assert.equal(balance.data[0].amount_cents, 15000);
+  assert.notEqual(balance.data[0].payment_id, prepared.data[0].payment_id);
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: balance.data[0].payment_id, p_link_id: 'link-' + runId + '-balance',
+    p_order_id: 'test-' + runId + '-balance', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  assert.ifError((await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':balance', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-balance', p_square_payment_id: 'pay-' + runId + '-balance',
+    p_amount_cents: 15000, p_status: 'COMPLETED', p_receipt_url: null, p_receipt_number: null,
+  })).error);
+  const settled = await admin.from('ranch_booking_requests').select('balance_due_cents').eq('id', id).single();
+  assert.equal(settled.data.balance_due_cents, 0);
+});
+
+test('failed checkout and expired link never confirm a reservation', async () => {
+  const submitted = await submit(draft({ p_unit: 'RV 09', p_email: contact('failed') }));
+  assert.ifError(submitted.error);
+  const id = submitted.data[0].request_id;
+  assert.ifError((await staff.rpc('ranch_decide_booking_request', {
+    p_request_id: id, p_decision: 'APPROVED', p_decision_note: null,
+  })).error);
+  const row = await admin.from('ranch_booking_requests').select('checkout_token,reservation_id').eq('id', id).single();
+  const prep = await admin.rpc('ranch_prepare_initial_payment', {
+    p_token: row.data.checkout_token, p_choice: 'FULL',
+  });
+  assert.ifError(prep.error);
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: prep.data[0].payment_id, p_link_id: 'link-' + runId + '-failed',
+    p_order_id: 'test-' + runId + '-failed', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  assert.ifError((await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':failed', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-failed', p_square_payment_id: 'pay-' + runId + '-failed',
+    p_amount_cents: 20000, p_status: 'FAILED', p_receipt_url: null, p_receipt_number: null,
+  })).error);
+  const held = await admin.from('ranch_reservations').select('status').eq('id', row.data.reservation_id).single();
+  assert.equal(held.data.status, 'PENDING');
+  assert.ifError((await admin.from('ranch_booking_requests').update({
+    hold_expires_at: new Date(Date.now() - 3600000).toISOString(),
+  }).eq('id', id)).error);
+  assert.ifError((await admin.rpc('ranch_mark_square_link_expired', {
+    p_payment_id: prep.data[0].payment_id,
+  })).error);
+  assert.ifError((await admin.from('ranch_payments').update({
+    closed_at: new Date(Date.now() - 600000).toISOString(),
+  }).eq('id', prep.data[0].payment_id)).error);
+  const expired = await admin.rpc('ranch_expire_unpaid_hold', { p_request_id: id });
+  assert.ifError(expired.error);
+  assert.equal(expired.data, true);
+  const cancelled = await admin.from('ranch_reservations').select('status').eq('id', row.data.reservation_id).single();
+  assert.equal(cancelled.data.status, 'CANCELLED');
+});
+
+test('amount mismatch is flagged and cannot subsequently auto-confirm', async () => {
+  const submitted = await submit(draft({ p_unit: 'RV 11', p_email: contact('refund') }));
+  assert.ifError(submitted.error);
+  const id = submitted.data[0].request_id;
+  assert.ifError((await staff.rpc('ranch_decide_booking_request', {
+    p_request_id: id, p_decision: 'APPROVED', p_decision_note: null,
+  })).error);
+  const row = await admin.from('ranch_booking_requests').select('checkout_token,reservation_id').eq('id', id).single();
+  const prep = await admin.rpc('ranch_prepare_initial_payment', {
+    p_token: row.data.checkout_token, p_choice: 'FULL',
+  });
+  const paymentId = prep.data[0].payment_id;
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: paymentId, p_link_id: 'link-' + runId + '-refund',
+    p_order_id: 'test-' + runId + '-refund', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  const mismatch = await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':mismatch', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-refund', p_square_payment_id: 'pay-' + runId + '-refund',
+    p_amount_cents: 1, p_status: 'COMPLETED', p_receipt_url: null, p_receipt_number: null,
+  });
+  assert.ifError(mismatch.error);
+  assert.equal(mismatch.data, 'amount_mismatch');
+  const unconfirmed = await admin.from('ranch_reservations').select('status').eq('id', row.data.reservation_id).single();
+  assert.equal(unconfirmed.data.status, 'PENDING');
+  const correct = await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':corrected', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-refund', p_square_payment_id: 'pay-' + runId + '-refund',
+    p_amount_cents: 20000, p_status: 'COMPLETED', p_receipt_url: null, p_receipt_number: null,
+  });
+  assert.ifError(correct.error);
+  assert.equal(correct.data, 'review_blocked');
+  const stillHeld = await admin.from('ranch_reservations').select('status').eq('id', row.data.reservation_id).single();
+  assert.equal(stillHeld.data.status, 'PENDING');
+});
+
+test('verified refund remains visible for staff review', async () => {
+  const linked = await admin.from('ranch_payments').select('request_id').eq('id', fullPaymentId).single();
+  const staffUser = await staff.auth.getUser();
+  const intent = await admin.rpc('ranch_prepare_refund', {
+    p_payment_id: fullPaymentId, p_amount_cents: 27500,
+    p_reason: 'Synthetic refund', p_staff_id: staffUser.data.user.id,
+  });
+  assert.ok(intent.error, 'staff role prepared a refund');
+  assert.ifError((await admin.from('ranch_staff').update({ role: 'owner' })
+    .eq('user_id', staffUser.data.user.id)).error);
+  const prepared = await admin.rpc('ranch_prepare_refund', {
+    p_payment_id: fullPaymentId, p_amount_cents: 27500,
+    p_reason: 'Synthetic refund', p_staff_id: staffUser.data.user.id,
+  });
+  assert.ifError(prepared.error);
+  const replay = await admin.rpc('ranch_prepare_refund', {
+    p_payment_id: fullPaymentId, p_amount_cents: 27500,
+    p_reason: 'Synthetic refund', p_staff_id: staffUser.data.user.id,
+  });
+  assert.ifError(replay.error);
+  assert.equal(replay.data, prepared.data);
+  assert.ifError((await admin.rpc('ranch_attach_refund', {
+    p_intent_id: prepared.data, p_square_refund_id: 'refund-' + runId, p_status: 'PENDING',
+  })).error);
+  const refunded = await admin.rpc('ranch_record_square_refund', {
+    p_event_id: 'test:' + runId + ':refunded', p_type: 'refund.updated',
+    p_refund_id: 'refund-' + runId, p_square_payment_id: 'pay-' + runId + '-full',
+    p_amount_cents: 27500, p_status: 'COMPLETED',
+  });
+  assert.ifError(refunded.error);
+  const payment = await admin.from('ranch_payments').select('status,refunded_cents,requires_review')
+    .eq('id', fullPaymentId).single();
+  assert.equal(payment.data.status, 'REFUNDED');
+  assert.equal(payment.data.refunded_cents, 27500);
+  assert.equal(payment.data.requires_review, true);
+  const cancelled = await staff.rpc('ranch_cancel_paid_booking', {
+    p_request_id: linked.data.request_id, p_reason: 'Synthetic cancellation',
+  });
+  assert.ifError(cancelled.error);
+  assert.equal(cancelled.data, true);
+  const history = await admin.from('ranch_payment_cancellations').select('reason')
+    .eq('request_id', linked.data.request_id).single();
+  assert.equal(history.data.reason, 'Synthetic cancellation');
+  assert.ifError((await admin.from('ranch_staff').update({ role: 'staff' })
+    .eq('user_id', staffUser.data.user.id)).error);
+});
+
+test('an open balance link blocks cancellation and a late payment requires review', async () => {
+  assert.ifError((await admin.from('ranch_payment_settings').update({
+    deposit_type: 'PERCENT', deposit_value: 25, balance_due_days_before_arrival: 7,
+  }).eq('id', true)).error);
+  const submitted = await submit(draft({ p_unit: 'RV 03', p_arrival: laterArrival,
+    p_departure: laterDeparture, p_email: contact('cancel-balance') }));
+  assert.ifError(submitted.error);
+  const id = submitted.data[0].request_id;
+  assert.ifError((await staff.rpc('ranch_decide_booking_request', {
+    p_request_id: id, p_decision: 'APPROVED', p_decision_note: null,
+  })).error);
+  const request = await admin.from('ranch_booking_requests').select('checkout_token,reservation_id')
+    .eq('id', id).single();
+  const initial = await admin.rpc('ranch_prepare_initial_payment', {
+    p_token: request.data.checkout_token, p_choice: 'DEPOSIT',
+  });
+  assert.ifError(initial.error);
+  const deposit = initial.data[0];
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: deposit.payment_id, p_link_id: 'link-' + runId + '-cancel-deposit',
+    p_order_id: 'test-' + runId + '-cancel-deposit', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  assert.ifError((await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':cancel-deposit', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-cancel-deposit',
+    p_square_payment_id: 'pay-' + runId + '-cancel-deposit',
+    p_amount_cents: deposit.amount_cents, p_status: 'COMPLETED',
+    p_receipt_url: null, p_receipt_number: null,
+  })).error);
+  const balance = await admin.rpc('ranch_prepare_balance_payment', { p_request_id: id });
+  assert.ifError(balance.error);
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: balance.data[0].payment_id, p_link_id: 'link-' + runId + '-cancel-balance',
+    p_order_id: 'test-' + runId + '-cancel-balance', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  assert.ifError((await admin.rpc('ranch_record_square_refund', {
+    p_event_id: 'test:' + runId + ':cancel-refund', p_type: 'refund.updated',
+    p_refund_id: 'refund-' + runId + '-cancel',
+    p_square_payment_id: 'pay-' + runId + '-cancel-deposit',
+    p_amount_cents: deposit.amount_cents, p_status: 'COMPLETED',
+  })).error);
+  const staffUser = await staff.auth.getUser();
+  assert.ifError((await admin.from('ranch_staff').update({ role: 'owner' })
+    .eq('user_id', staffUser.data.user.id)).error);
+  code(await staff.rpc('ranch_cancel_paid_booking', {
+    p_request_id: id, p_reason: 'Synthetic cancellation',
+  }), 'WR409');
+  assert.ifError((await admin.rpc('ranch_mark_square_link_expired', {
+    p_payment_id: balance.data[0].payment_id,
+  })).error);
+  code(await staff.rpc('ranch_cancel_paid_booking', {
+    p_request_id: id, p_reason: 'Synthetic cancellation',
+  }), 'WR409');
+  assert.ifError((await admin.from('ranch_payments').update({
+    closed_at: new Date(Date.now() - 600000).toISOString(),
+  }).eq('id', balance.data[0].payment_id)).error);
+  const cancelled = await staff.rpc('ranch_cancel_paid_booking', {
+    p_request_id: id, p_reason: 'Synthetic cancellation',
+  });
+  assert.ifError(cancelled.error); assert.equal(cancelled.data, true);
+  assert.equal((await admin.from('ranch_reservations').select('status')
+    .eq('id', request.data.reservation_id).single()).data.status, 'CANCELLED');
+  const late = await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':late-balance', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-cancel-balance',
+    p_square_payment_id: 'pay-' + runId + '-cancel-balance',
+    p_amount_cents: balance.data[0].amount_cents, p_status: 'COMPLETED',
+    p_receipt_url: null, p_receipt_number: null,
+  });
+  assert.ifError(late.error); assert.equal(late.data, 'late_balance_for_cancelled_booking');
+  assert.equal((await admin.from('ranch_payments').select('status,requires_review')
+    .eq('id', balance.data[0].payment_id).single()).data.status, 'REVIEW');
+  assert.ifError((await admin.from('ranch_staff').update({ role: 'staff' })
+    .eq('user_id', staffUser.data.user.id)).error);
+});
+
+test('day pass server price and payment status use owner settings', async () => {
+  assert.ifError((await admin.from('ranch_payment_settings').update({
+    day_pass_enabled: true, day_pass_primary_cents: 1500,
+    day_pass_additional_cents: 1000, atv_day_cents: 5000,
+  }).eq('id', true)).error);
+  const prepared = await admin.rpc('ranch_prepare_day_pass', {
+    p_key: randomUUID(), p_name: 'Synthetic Day Guest', p_email: contact('day-pass'),
+    p_visit_date: datePlus(3), p_additional: 2, p_atv: true,
+  });
+  assert.ifError(prepared.error);
+  assert.equal(prepared.data[0].amount_cents, 8500);
+  const paymentId = prepared.data[0].payment_id;
+  const row = await admin.from('ranch_payments').select('day_pass_id').eq('id', paymentId).single();
+  dayPasses.push(row.data.day_pass_id);
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: paymentId, p_link_id: 'link-' + runId + '-day-pass',
+    p_order_id: 'test-' + runId + '-day-pass', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  assert.ifError((await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':day-pass', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-day-pass', p_square_payment_id: 'pay-' + runId + '-day-pass',
+    p_amount_cents: 8500, p_status: 'COMPLETED', p_receipt_url: null, p_receipt_number: null,
+  })).error);
+  const pass = await admin.from('ranch_day_pass_orders').select('status').eq('id', row.data.day_pass_id).single();
+  assert.equal(pass.data.status, 'PAID');
+});
+
+test('expired day pass link cancels the pass; delayed payment is flagged', async () => {
+  const prepared = await admin.rpc('ranch_prepare_day_pass', {
+    p_key: randomUUID(), p_name: 'Synthetic Late Guest', p_email: contact('late-pass'),
+    p_visit_date: datePlus(1), p_additional: 0, p_atv: false,
+  });
+  assert.ifError(prepared.error);
+  const paymentId = prepared.data[0].payment_id;
+  const row = await admin.from('ranch_payments').select('day_pass_id').eq('id', paymentId).single();
+  dayPasses.push(row.data.day_pass_id);
+  assert.ifError((await admin.rpc('ranch_attach_square_link', {
+    p_payment_id: paymentId, p_link_id: 'link-' + runId + '-late-pass',
+    p_order_id: 'test-' + runId + '-late-pass', p_url: 'https://sandbox.square.link/u/SYNTHETIC',
+  })).error);
+  assert.ifError((await admin.from('ranch_day_pass_orders').update({ visit_date: datePlus(-1) })
+    .eq('id', row.data.day_pass_id)).error);
+  assert.ifError((await admin.rpc('ranch_mark_square_link_expired', { p_payment_id: paymentId })).error);
+  assert.ifError((await admin.from('ranch_payments').update({
+    closed_at: new Date(Date.now() - 600000).toISOString(),
+  }).eq('id', paymentId)).error);
+  const expired = await admin.rpc('ranch_expire_day_pass', { p_day_pass_id: row.data.day_pass_id });
+  assert.ifError(expired.error); assert.equal(expired.data, true);
+  const late = await admin.rpc('ranch_record_square_payment', {
+    p_event_id: 'test:' + runId + ':late-pass', p_event_type: 'payment.updated',
+    p_order_id: 'test-' + runId + '-late-pass',
+    p_square_payment_id: 'pay-' + runId + '-late-pass',
+    p_amount_cents: 1500, p_status: 'COMPLETED',
+    p_receipt_url: null, p_receipt_number: null,
+  });
+  assert.ifError(late.error); assert.equal(late.data, 'late_day_pass_payment');
+  const review = await admin.from('ranch_payments').select('status,requires_review').eq('id', paymentId).single();
+  assert.equal(review.data.status, 'REVIEW');
+  assert.equal(review.data.requires_review, true);
 });
