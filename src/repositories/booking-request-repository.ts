@@ -46,7 +46,7 @@ export async function submitBookingRequest(draft: BookingRequestDraft, idempoten
   } catch { return { receipt: null, error: 'connectivity' }; }
 }
 
-const STAFF_COLUMNS = 'id, guest_name, email, phone, note, unit, stay_type, rv_service, arrival, departure, guests, atv_access, quoted_total, status, submitted_at, decided_at, decision_note, reservation_id';
+const STAFF_COLUMNS = 'id, guest_name, email, phone, note, unit, stay_type, rv_service, arrival, departure, guests, atv_access, quoted_total, status, submitted_at, decided_at, decision_note, reservation_id, checkout_token, hold_expires_at, balance_due_cents, balance_due_on';
 type RequestRow = {
   id: string; guest_name: string; email: string | null; phone: string | null;
   note: string | null; unit: string; stay_type: BookingRequestDraft['stayType'];
@@ -54,6 +54,8 @@ type RequestRow = {
   guests: number; atv_access: boolean; quoted_total: number | string;
   status: BookingRequestStatus; submitted_at: string; decided_at: string | null;
   decision_note: string | null; reservation_id: string | null;
+  checkout_token: string | null; hold_expires_at: string | null;
+  balance_due_cents: number | null; balance_due_on: string | null;
 };
 function toStaffRequest(row: RequestRow): StaffBookingRequest {
   return {
@@ -62,6 +64,8 @@ function toStaffRequest(row: RequestRow): StaffBookingRequest {
     arrival: row.arrival, departure: row.departure, guests: row.guests, atvAccess: row.atv_access,
     quotedTotal: Number(row.quoted_total), status: row.status, submittedAt: row.submitted_at,
     decidedAt: row.decided_at, decisionNote: row.decision_note, reservationId: row.reservation_id,
+    checkoutToken: row.checkout_token, holdExpiresAt: row.hold_expires_at,
+    balanceDueCents: row.balance_due_cents, balanceDueOn: row.balance_due_on,
   };
 }
 export async function listStaffBookingRequests(): Promise<{ requests: StaffBookingRequest[]; error: BookingRequestError | null }> {
@@ -73,7 +77,7 @@ export async function listStaffBookingRequests(): Promise<{ requests: StaffBooki
     return { requests: ((data ?? []) as unknown as RequestRow[]).map(toStaffRequest), error: null };
   } catch { return { requests: [], error: 'connectivity' }; }
 }
-export async function decideStaffBookingRequest(id: string, decision: Exclude<BookingRequestStatus, 'PENDING'>, note: string): Promise<BookingRequestError | null> {
+export async function decideStaffBookingRequest(id: string, decision: 'APPROVED' | 'REJECTED', note: string): Promise<BookingRequestError | null> {
   if (!STAFF_BOOKING_REQUESTS_ENABLED) return 'disabled';
   try {
     const { data, error, status } = await supabase.rpc('ranch_decide_booking_request', {
@@ -81,7 +85,7 @@ export async function decideStaffBookingRequest(id: string, decision: Exclude<Bo
     });
     if (error) return mapBookingRequestError(error, status);
     const row = Array.isArray(data) ? data[0] : data;
-    return row?.request_id === id && row?.request_status === decision &&
+    return row?.request_id === id && row?.request_status === (decision === 'APPROVED' ? 'AWAITING_PAYMENT' : 'REJECTED') &&
       (decision === 'APPROVED' ? typeof row?.reservation_id === 'string' : row?.reservation_id === null)
       ? null : 'unavailable';
   } catch { return 'connectivity'; }

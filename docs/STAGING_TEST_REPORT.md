@@ -1,5 +1,20 @@
 # Job #12 staging test report
 
+## Square Sandbox feature branch results, 2026-11-04
+
+| Check | Actual result |
+| --- | --- |
+| Branch | `feature/square-sandbox-payments`, based on `feature/backend-foundation` |
+| Production access | None. No production SQL, payment function deployment, reservation edit, flag change, or Square live merchant connection. RV 05 November 15–22, 2026 was not touched. |
+| Local source tests | 35/35 passed with `node --test tests/*.test.mjs`, including raw-body Square HMAC signature binding. |
+| TypeScript | Passed with `node ./node_modules/typescript/bin/tsc --noEmit` after removing a stale ignored Expo route-type cache. |
+| Web export | Passed with `node ./node_modules/expo/bin/cli export --platform web`; 28 static routes generated, including checkout, day pass, Payments, and payment settings. |
+| Integration suite syntax | `node --check staging/integration.test.mjs` passed. |
+| Isolated database / SQL execution | **Not run locally.** This Windows machine still has no Docker/Postgres runtime. The manual GitHub-hosted local Supabase workflow has been written but not run. No migration pass is claimed. |
+| Square Sandbox checkout/webhooks/refunds | **Not run.** No Sandbox token, location, webhook subscription or reachable isolated function URL was available. SQL service-RPC tests simulate trusted payment transitions only; they are not Square transaction evidence. |
+
+The new synthetic suite covers staff hold creation, full/deposit/balance state, duplicate payment events, failed payment, refund tracking, amount mismatch, concurrency, and expired hold transitions when run against the five-file isolated database. Real Square Sandbox success/decline/refund/dispute and expiration reconciliation remain required before setting either public request or Square flag true. The migration and functions require database execution and security review before any production approval.
+
 Status on 2026-11-02: **BLOCKED BEFORE STAGING CREATION. No database integration test has run.**
 
 | Check | Actual result / evidence |

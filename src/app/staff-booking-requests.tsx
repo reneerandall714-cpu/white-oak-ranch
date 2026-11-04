@@ -7,7 +7,7 @@ import type { BookingRequestStatus, StaffBookingRequest } from '../data/bookingR
 import { BOOKING_REQUEST_ERROR_TEXT, decideStaffBookingRequest, listStaffBookingRequests, type BookingRequestError } from '../repositories/booking-request-repository';
 
 type Decision = 'APPROVED' | 'REJECTED';
-const FILTERS: BookingRequestStatus[] = ['PENDING', 'APPROVED', 'REJECTED'];
+const FILTERS: BookingRequestStatus[] = ['PENDING', 'AWAITING_PAYMENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'PAYMENT_REVIEW', 'CANCELLED'];
 
 export default function StaffBookingRequestsScreen() {
   const [requests, setRequests] = useState<StaffBookingRequest[]>([]);
@@ -37,7 +37,7 @@ export default function StaffBookingRequestsScreen() {
     try {
       const result = await decideStaffBookingRequest(selected.requestId, confirm, decisionNote);
       if (result) { setErrorContext('decision'); setError(result); return; }
-      setSuccess(confirm === 'APPROVED' ? 'Approved and saved as a confirmed reservation.' : 'Rejected. No reservation was created.');
+      setSuccess(confirm === 'APPROVED' ? 'Site held for 30 minutes. Share the customer checkout link promptly.' : 'Rejected. No reservation was created.');
       setConfirm(null); setDecisionNote('');
       await refresh();
     } finally { saveLock.current = false; setSaving(false); }
@@ -46,7 +46,7 @@ export default function StaffBookingRequestsScreen() {
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page} keyboardShouldPersistTaps="handled">
     <View style={s.hero}><TouchableOpacity accessibilityLabel="Back to staff dashboard" onPress={() => router.back()}><Text style={s.back}>‹ Back</Text></TouchableOpacity>
       <Text style={s.eyebrow}>WHITE OAK RANCH · STAFF ONLY</Text><Text style={s.title}>Booking requests</Text>
-      <Text style={s.heroText}>Review customer requests. Pending requests do not hold inventory; approval checks the site and price again before creating a reservation.</Text>
+      <Text style={s.heroText}>Approval creates a temporary unpaid hold. Only a verified Square payment confirms the reservation.</Text>
     </View>
     <View style={s.content}>
       {!STAFF_BOOKING_REQUESTS_ENABLED ? <View style={s.notice}><Text style={s.noticeTitle}>Backend approval pending</Text><Text style={s.body}>No requests can be submitted or reviewed online yet. The intake migration must be installed and security-tested before this inbox is enabled.</Text></View> : <>
@@ -72,11 +72,14 @@ export default function StaffBookingRequestsScreen() {
           {selected.decisionNote ? <Text style={s.body}>Decision note: {selected.decisionNote}</Text> : null}
           {selected.decidedAt ? <Text style={s.caption}>Decided {new Date(selected.decidedAt).toLocaleString()}</Text> : null}
           {selected.reservationId ? <Text selectable style={s.caption}>Reservation {selected.reservationId}</Text> : null}
+          {selected.checkoutToken ? <><Text style={s.body}>Hold expires: {selected.holdExpiresAt ? new Date(selected.holdExpiresAt).toLocaleString() : 'Unknown'}</Text>
+            <Text selectable style={s.caption}>Customer checkout: {process.env.EXPO_PUBLIC_CHECKOUT_BASE_URL ?? 'Set EXPO_PUBLIC_CHECKOUT_BASE_URL'}/checkout?token={selected.checkoutToken}</Text></> : null}
+          {selected.balanceDueCents ? <Text style={s.body}>Balance due: ${(selected.balanceDueCents / 100).toFixed(2)} by {selected.balanceDueOn ?? 'date not set'}</Text> : null}
           {selected.status === 'PENDING' && <>
-            <Text style={s.warning}>Approval creates a confirmed reservation. Recheck the details and contact the guest separately; no email is sent automatically.</Text>
+            <Text style={s.warning}>Approval holds the site for 30 minutes. Share the checkout link manually. Payment verification confirms the reservation; no email is sent automatically.</Text>
             <View style={s.actionRow}><TouchableOpacity disabled={saving} onPress={() => setConfirm('APPROVED')} style={s.button}><Text style={s.buttonText}>Approve</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={() => setConfirm('REJECTED')} style={s.outline}><Text style={s.outlineText}>Reject</Text></TouchableOpacity></View>
             {confirm && <View style={s.confirm}><Text style={s.noticeTitle}>Confirm {confirm.toLowerCase()}?</Text>
-              <Text style={s.body}>{confirm === 'APPROVED' ? 'The server will recheck availability and pricing, then atomically create a confirmed reservation.' : 'This keeps the request history and creates no reservation.'}</Text>
+              <Text style={s.body}>{confirm === 'APPROVED' ? 'The server will recheck availability and pricing, then place a temporary unpaid hold.' : 'This keeps the request history and creates no reservation.'}</Text>
               <TextInput accessibilityLabel="Decision note, optional" placeholder="Internal note (optional)" value={decisionNote} maxLength={500} multiline onChangeText={setDecisionNote} style={s.input} />
               <View style={s.actionRow}><TouchableOpacity disabled={saving} onPress={() => void decide()} style={s.button}><Text style={s.buttonText}>{saving ? 'Saving…' : `Yes, ${confirm.toLowerCase()}`}</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={() => setConfirm(null)} style={s.outline}><Text style={s.outlineText}>Keep pending</Text></TouchableOpacity></View>
             </View>}

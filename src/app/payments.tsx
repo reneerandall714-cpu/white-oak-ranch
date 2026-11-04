@@ -1,557 +1,183 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
-import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SQUARE_SANDBOX_CHECKOUT_ENABLED } from '../constants/feature-flags';
+import { supabase } from '../lib/supabase';
 
-type PaymentFilter = 'all' | 'paid' | 'pending';
-
-const payments = [
-  {
-    id: '1',
-    customer: 'James Carter',
-    type: 'RV Reservation',
-    amount: 150,
-    status: 'PAID',
-    date: 'Sep 16',
-  },
-  {
-    id: '2',
-    customer: 'Amanda Lewis',
-    type: 'Day Pass + ATV/SxS',
-    amount: 65,
-    status: 'PAID',
-    date: 'Sep 16',
-  },
-  {
-    id: '3',
-    customer: 'Demo Guest',
-    type: 'Annual Membership',
-    amount: 145,
-    status: 'PAID',
-    date: 'Sep 15',
-  },
-  {
-    id: '4',
-    customer: 'Chris Walker',
-    type: 'RV Reservation',
-    amount: 100,
-    status: 'PENDING',
-    date: 'Sep 20',
-  },
-  {
-    id: '5',
-    customer: 'Megan Hall',
-    type: 'Tent Camping',
-    amount: 50,
-    status: 'PAID',
-    date: 'Sep 14',
-  },
-];
+type PaymentRow = {
+  id: string; request_id: string | null; day_pass_id: string | null;
+  phase: 'INITIAL' | 'BALANCE' | 'DAY_PASS'; amount_cents: number;
+  status: string; square_payment_id: string | null; receipt_url: string | null;
+  receipt_number: string | null; refunded_cents: number; requires_review: boolean;
+  created_at: string; paid_at: string | null;
+  ranch_booking_requests: {
+    guest_name: string; unit: string; quoted_total: number;
+    balance_due_cents: number | null; balance_due_on: string | null; status: string;
+  } | null;
+  ranch_day_pass_orders: { guest_name: string; visit_date: string; status: string } | null;
+};
+type Filter = 'ALL' | 'OPEN' | 'PAID' | 'FAILED' | 'REFUNDED' | 'REVIEW';
+const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 export default function PaymentsScreen() {
-  const [filter, setFilter] = useState<PaymentFilter>('all');
+  const [rows, setRows] = useState<PaymentRow[]>([]);
+  const [filter, setFilter] = useState<Filter>('ALL');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [role, setRole] = useState('');
+  const [refundId, setRefundId] = useState<string | null>(null);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
 
-  const filtered = payments.filter((payment) => {
-    if (filter === 'all') return true;
-    return payment.status.toLowerCase() === filter;
-  });
+  async function refresh() {
+    if (!SQUARE_SANDBOX_CHECKOUT_ENABLED) return;
+    setLoading(true); setMessage('');
+    const [{ data, error }, user] = await Promise.all([
+      supabase.from('ranch_payments').select(
+        'id,request_id,day_pass_id,phase,amount_cents,status,square_payment_id,receipt_url,receipt_number,refunded_cents,requires_review,created_at,paid_at,ranch_booking_requests(guest_name,unit,quoted_total,balance_due_cents,balance_due_on,status),ranch_day_pass_orders(guest_name,visit_date,status)'
+      ).order('created_at', { ascending: false }).limit(200),
+      supabase.auth.getUser(),
+    ]);
+    if (error) setMessage('Could not load payment records. Sign in as active staff and retry.');
+    else setRows((data ?? []) as unknown as PaymentRow[]);
+    if (user.data.user) {
+      const staff = await supabase.from('ranch_staff').select('role').eq('user_id', user.data.user.id).maybeSingle();
+      setRole(staff.data?.role ?? '');
+    }
+    setLoading(false);
+  }
+  useEffect(() => { void refresh(); }, []);
 
-  const totalPaid = payments
-    .filter((payment) => payment.status === 'PAID')
-    .reduce((sum, payment) => sum + payment.amount, 0);
+  async function refund() {
+    const row = rows.find((r) => r.id === refundId);
+    const cents = Math.round(Number(refundAmount) * 100);
+    if (!row || !Number.isSafeInteger(cents) || cents <= 0 ||
+      cents > row.amount_cents - row.refunded_cents || !refundReason.trim()) {
+      setMessage('Enter a valid refund amount and reason.'); return;
+    }
+    setSaving(true); setMessage('');
+    const { data, error } = await supabase.functions.invoke('square-refund', {
+      body: { paymentId: row.id, amountCents: cents, reason: refundReason.trim() },
+    });
+    setSaving(false);
+    if (error || !data?.refundId) {
+      setMessage('Refund status is uncertain. Check Square and refresh before retrying.');
+      return;
+    }
+    setMessage(`Refund ${data.refundId}: ${data.status}. Refresh for final status.`);
+    setRefundId(null); setRefundAmount(''); setRefundReason('');
+    await refresh();
+  }
+  async function cancelReservation() {
+    if (!cancelId || !cancelReason.trim() || saving) {
+      setMessage('Enter a cancellation reason.'); return;
+    }
+    setSaving(true); setMessage('');
+    const { data, error } = await supabase.rpc('ranch_cancel_paid_booking', {
+      p_request_id: cancelId, p_reason: cancelReason.trim(),
+    });
+    setSaving(false);
+    if (error || data !== true) {
+      setMessage('Cancellation was not completed. All payments must be reconciled and refunded first.');
+      return;
+    }
+    setCancelId(null); setCancelReason('');
+    setMessage('Refunded reservation cancelled and recorded.');
+    await refresh();
+  }
 
-  const totalPending = payments
-    .filter((payment) => payment.status === 'PENDING')
-    .reduce((sum, payment) => sum + payment.amount, 0);
+  const filtered = rows.filter((r) => filter === 'ALL' || (filter === 'REFUNDED'
+    ? r.refunded_cents > 0 : filter === 'REVIEW'
+      ? r.requires_review || r.status === 'REVIEW' : r.status === filter));
+  const collected = rows.filter((r) => ['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(r.status))
+    .reduce((sum, r) => sum + r.amount_cents - r.refunded_cents, 0);
+  const outstanding = [...new Map(rows.filter((r) => r.request_id)
+    .map((r) => [r.request_id, r.ranch_booking_requests?.balance_due_cents ?? 0])).values()]
+    .reduce((sum, cents) => sum + cents, 0);
+  const pending = rows.filter((r) => ['CREATED', 'OPEN', 'FAILED'].includes(r.status))
+    .reduce((sum, r) => sum + r.amount_cents, 0);
+  const refunds = rows.reduce((sum, r) => sum + r.refunded_cents, 0);
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backText}>‹</Text>
-          </TouchableOpacity>
-
-          <View>
-            <Text style={styles.eyebrow}>WHITE OAK RANCH</Text>
-            <Text style={styles.title}>Payments</Text>
-            <Text style={styles.subtitle}>Revenue & transaction status</Text>
-          </View>
-        </View>
-
-        <View style={styles.summaryGrid}>
-          <SummaryCard
-            label="Collected"
-            value={`$${totalPaid.toLocaleString()}`}
-          />
-
-          <SummaryCard
-            label="Pending"
-            value={`$${totalPending.toLocaleString()}`}
-          />
-
-          <SummaryCard
-            label="Transactions"
-            value={payments.length.toString()}
-          />
-
-          <SummaryCard
-            label="Refunds"
-            value="$0"
-          />
-        </View>
-
-        <View style={styles.filterRow}>
-          <FilterButton
-            label="All"
-            selected={filter === 'all'}
-            onPress={() => setFilter('all')}
-          />
-
-          <FilterButton
-            label="Paid"
-            selected={filter === 'paid'}
-            onPress={() => setFilter('paid')}
-          />
-
-          <FilterButton
-            label="Pending"
-            selected={filter === 'pending'}
-            onPress={() => setFilter('pending')}
-          />
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Transactions</Text>
-          <Text style={styles.sectionCount}>
-            {filtered.length} shown
-          </Text>
-        </View>
-
-        {filtered.map((payment) => (
-          <PaymentCard
-            key={payment.id}
-            customer={payment.customer}
-            type={payment.type}
-            amount={payment.amount}
-            status={payment.status}
-            date={payment.date}
-          />
-        ))}
-
-        <View style={styles.integrationBox}>
-          <Text style={styles.integrationLabel}>PAYMENT FLOW</Text>
-          <Text style={styles.integrationTitle}>
-            Customer payments in one place
-          </Text>
-
-          <FlowRow text="Reservation payments" />
-          <FlowRow text="Day passes" />
-          <FlowRow text="Membership purchases and renewals" />
-          <FlowRow text="Event registration" />
-          <FlowRow text="ATV / SxS access fees" />
-          <FlowRow text="Refund tracking" />
-          <FlowRow text="QuickBooks accounting sync" />
-        </View>
-
-        <View style={styles.noteBox}>
-          <Text style={styles.noteTitle}>Planned live payment system</Text>
-          <Text style={styles.noteText}>
-            The production app can connect to a secure payment provider for
-            card payments, receipts, refunds and transaction status. Card
-            details should not be stored directly in the White Oak Ranch
-            database.
-          </Text>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerTitle}>WHITE OAK RANCH</Text>
-          <Text style={styles.footerText}>Accounting & Operations</Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
+    <TouchableOpacity onPress={() => router.back()}><Text style={s.back}>‹ Back</Text></TouchableOpacity>
+    <Text style={s.title}>Payments</Text>
+    <Text style={s.note}>Square Sandbox records. Initial deposits confirm reservations only after verified payment.</Text>
+    {!SQUARE_SANDBOX_CHECKOUT_ENABLED ? <Text style={s.note}>Payment tracking is disabled until Sandbox verification passes.</Text> : <>
+      <View style={s.row}><TouchableOpacity onPress={() => void refresh()} style={s.button}><Text style={s.buttonText}>Refresh</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/payment-settings')} style={s.button}><Text style={s.buttonText}>Payment settings</Text></TouchableOpacity></View>
+      {loading && <ActivityIndicator />}
+      {!!message && <Text accessibilityLiveRegion="polite" style={s.note}>{message}</Text>}
+      <View style={s.summary}><Text style={s.heading}>Collected {money(collected)}</Text>
+        <Text style={s.text}>Unpaid links {money(pending)}</Text>
+        <Text style={s.text}>Reservation balances due {money(outstanding)}</Text>
+        <Text style={s.text}>Refunded {money(refunds)}</Text>
+        <Text style={s.note}>Most recent 200 payment records; totals reflect this page.</Text></View>
+      <View style={s.row}>{(['ALL', 'OPEN', 'PAID', 'FAILED', 'REFUNDED', 'REVIEW'] as const).map((value) =>
+        <TouchableOpacity key={value} onPress={() => setFilter(value)} style={[s.tab, filter === value && s.tabActive]}>
+          <Text style={s.text}>{value}</Text></TouchableOpacity>)}</View>
+      {filtered.length === 0 && <Text style={s.note}>No matching transactions.</Text>}
+      {filtered.map((r) => <View key={r.id} style={s.card}>
+        <Text style={s.heading}>{r.ranch_booking_requests?.guest_name ?? r.ranch_day_pass_orders?.guest_name ?? 'Customer'} · {r.phase}</Text>
+        <Text style={s.text}>{r.ranch_booking_requests?.unit ?? 'Day pass'} · {money(r.amount_cents)}</Text>
+        <Text style={s.text}>Status: {r.status}{r.requires_review ? ' · STAFF REVIEW' : ''}</Text>
+        {r.ranch_booking_requests && <><Text style={s.text}>Reservation total: ${Number(r.ranch_booking_requests.quoted_total).toFixed(2)}</Text>
+          <Text style={s.text}>Outstanding: {money(r.ranch_booking_requests.balance_due_cents ?? 0)} · due {r.ranch_booking_requests.balance_due_on ?? '—'}</Text>
+          <Text style={s.text}>Reservation: {r.ranch_booking_requests.status}</Text></>}
+        {r.paid_at && <Text style={s.text}>Received: {new Date(r.paid_at).toLocaleString()}</Text>}
+        {r.refunded_cents > 0 && <Text style={s.text}>Refunded: {money(r.refunded_cents)}</Text>}
+        {r.square_payment_id && <Text selectable style={s.note}>Square payment {r.square_payment_id}</Text>}
+        {r.receipt_number && <Text style={s.text}>Receipt {r.receipt_number}</Text>}
+        {r.receipt_url && <TouchableOpacity onPress={() => void Linking.openURL(r.receipt_url!)}><Text style={s.link}>Open Square receipt</Text></TouchableOpacity>}
+        <Text style={s.note}>Created {new Date(r.created_at).toLocaleString()}</Text>
+        {['owner', 'admin'].includes(role) && r.square_payment_id &&
+          ['PAID', 'PARTIAL_REFUND'].includes(r.status) && r.refunded_cents < r.amount_cents &&
+          <TouchableOpacity onPress={() => { setRefundId(r.id); setRefundAmount(((r.amount_cents - r.refunded_cents) / 100).toFixed(2)); }} style={s.linkButton}>
+            <Text style={s.link}>Request refund</Text></TouchableOpacity>}
+        {refundId === r.id && <View style={s.refund}><Text style={s.heading}>Refund to original payment method</Text>
+          <TextInput style={s.input} accessibilityLabel="Refund dollars" keyboardType="decimal-pad" value={refundAmount} onChangeText={setRefundAmount} />
+          <TextInput style={s.input} accessibilityLabel="Refund reason" placeholder="Reason" value={refundReason} onChangeText={setRefundReason} maxLength={192} />
+          <Text style={s.note}>A refund does not automatically cancel a reservation. Review the stay separately.</Text>
+          <TouchableOpacity disabled={saving} onPress={() => void refund()} style={s.button}><Text style={s.buttonText}>{saving ? 'Submitting…' : 'Submit Sandbox refund'}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setRefundId(null)}><Text style={s.link}>Cancel</Text></TouchableOpacity>
+        </View>}
+        {['owner', 'admin'].includes(role) && r.phase === 'INITIAL' &&
+          r.ranch_booking_requests?.status === 'APPROVED' && r.request_id &&
+          <TouchableOpacity onPress={() => setCancelId(r.request_id)} style={s.linkButton}>
+            <Text style={s.link}>Cancel reservation after refunds</Text></TouchableOpacity>}
+        {cancelId && cancelId === r.request_id && r.phase === 'INITIAL' && <View style={s.refund}>
+          <Text style={s.heading}>Cancel refunded reservation</Text>
+          <Text style={s.note}>The server requires every payment to be fully refunded first and records the reason.</Text>
+          <TextInput style={s.input} accessibilityLabel="Cancellation reason" placeholder="Reason"
+            value={cancelReason} onChangeText={setCancelReason} maxLength={500} />
+          <TouchableOpacity disabled={saving} onPress={() => void cancelReservation()} style={s.button}>
+            <Text style={s.buttonText}>{saving ? 'Saving…' : 'Cancel refunded reservation'}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setCancelId(null)}><Text style={s.link}>Keep reservation</Text></TouchableOpacity>
+        </View>}
+      </View>)}
+    </>}
+  </ScrollView></SafeAreaView>;
 }
-
-function SummaryCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <View style={styles.summaryCard}>
-      <Text style={styles.summaryValue}>{value}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function FilterButton({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[
-        styles.filterButton,
-        selected && styles.filterButtonSelected,
-      ]}
-      onPress={onPress}
-    >
-      <Text
-        style={[
-          styles.filterButtonText,
-          selected && styles.filterButtonTextSelected,
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-function PaymentCard({
-  customer,
-  type,
-  amount,
-  status,
-  date,
-}: {
-  customer: string;
-  type: string;
-  amount: number;
-  status: string;
-  date: string;
-}) {
-  return (
-    <TouchableOpacity style={styles.card}>
-      <View style={styles.cardTop}>
-        <View>
-          <Text style={styles.customer}>{customer}</Text>
-          <Text style={styles.type}>{type}</Text>
-        </View>
-
-        <Text style={styles.amount}>
-          ${amount.toLocaleString()}
-        </Text>
-      </View>
-
-      <View style={styles.cardBottom}>
-        <Text style={styles.date}>{date}</Text>
-
-        <View
-          style={[
-            styles.statusBadge,
-            status === 'PAID'
-              ? styles.paidBadge
-              : styles.pendingBadge,
-          ]}
-        >
-          <Text style={styles.statusText}>{status}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function FlowRow({ text }: { text: string }) {
-  return (
-    <View style={styles.flowRow}>
-      <Text style={styles.check}>✓</Text>
-      <Text style={styles.flowText}>{text}</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F4F1E8',
-  },
-
-  container: {
-    paddingBottom: 50,
-  },
-
-  header: {
-    backgroundColor: '#203B2A',
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-
-  backText: {
-    color: '#FFFFFF',
-    fontSize: 36,
-    lineHeight: 38,
-    marginTop: -3,
-  },
-
-  eyebrow: {
-    color: '#D8C59D',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.8,
-  },
-
-  title: {
-    color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '900',
-    marginTop: 3,
-  },
-
-  subtitle: {
-    color: '#CCD4CD',
-    fontSize: 13,
-    marginTop: 4,
-  },
-
-  summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 14,
-    marginTop: 18,
-  },
-
-  summaryCard: {
-    width: '46%',
-    margin: '2%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-  },
-
-  summaryValue: {
-    color: '#203B2A',
-    fontSize: 24,
-    fontWeight: '900',
-  },
-
-  summaryLabel: {
-    color: '#737772',
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  filterRow: {
-    flexDirection: 'row',
-    marginHorizontal: 18,
-    marginTop: 10,
-    marginBottom: 20,
-  },
-
-  filterButton: {
-    flex: 1,
-    marginHorizontal: 4,
-    backgroundColor: '#E7E3D9',
-    borderRadius: 12,
-    paddingVertical: 11,
-    alignItems: 'center',
-  },
-
-  filterButtonSelected: {
-    backgroundColor: '#203B2A',
-  },
-
-  filterButtonText: {
-    color: '#696D68',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  filterButtonTextSelected: {
-    color: '#FFFFFF',
-  },
-
-  sectionHeader: {
-    marginHorizontal: 20,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-
-  sectionTitle: {
-    color: '#203B2A',
-    fontSize: 21,
-    fontWeight: '900',
-  },
-
-  sectionCount: {
-    color: '#858984',
-    fontSize: 11,
-  },
-
-  card: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 18,
-    marginBottom: 11,
-    borderRadius: 16,
-    padding: 16,
-  },
-
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-
-  customer: {
-    color: '#203B2A',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
-  type: {
-    color: '#777B76',
-    fontSize: 12,
-    marginTop: 3,
-  },
-
-  amount: {
-    color: '#9B7952',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-
-  cardBottom: {
-    borderTopWidth: 1,
-    borderTopColor: '#ECE9E1',
-    marginTop: 13,
-    paddingTop: 11,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  date: {
-    color: '#888B86',
-    fontSize: 11,
-  },
-
-  statusBadge: {
-    borderRadius: 20,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-
-  paidBadge: {
-    backgroundColor: '#E5EEE7',
-  },
-
-  pendingBadge: {
-    backgroundColor: '#F2E7DD',
-  },
-
-  statusText: {
-    color: '#203B2A',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-
-  integrationBox: {
-    marginHorizontal: 18,
-    marginTop: 18,
-    backgroundColor: '#203B2A',
-    borderRadius: 18,
-    padding: 20,
-  },
-
-  integrationLabel: {
-    color: '#D8C59D',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.3,
-  },
-
-  integrationTitle: {
-    color: '#FFFFFF',
-    fontSize: 19,
-    fontWeight: '900',
-    marginTop: 5,
-    marginBottom: 12,
-  },
-
-  flowRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-
-  check: {
-    color: '#D8C59D',
-    fontWeight: '900',
-    marginRight: 8,
-  },
-
-  flowText: {
-    color: '#D6DDD7',
-    fontSize: 13,
-  },
-
-  noteBox: {
-    marginHorizontal: 18,
-    marginTop: 14,
-    backgroundColor: '#EAE6DA',
-    borderRadius: 16,
-    padding: 17,
-  },
-
-  noteTitle: {
-    color: '#203B2A',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  noteText: {
-    color: '#686C67',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 5,
-  },
-
-  footer: {
-    alignItems: 'center',
-    marginTop: 34,
-  },
-
-  footerTitle: {
-    color: '#203B2A',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-
-  footerText: {
-    color: '#898C87',
-    fontSize: 11,
-    marginTop: 4,
-  },
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F4F1E8' },
+  page: { padding: 20, maxWidth: 800, width: '100%', alignSelf: 'center', paddingBottom: 50 },
+  back: { color: '#203B2A', marginBottom: 18 },
+  title: { fontSize: 28, fontWeight: '800', color: '#203B2A' },
+  note: { color: '#725A36', marginTop: 8, lineHeight: 19 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 },
+  button: { backgroundColor: '#203B2A', padding: 12, borderRadius: 10, alignItems: 'center' },
+  buttonText: { color: '#FFFFFF', fontWeight: '800' },
+  summary: { backgroundColor: '#FFFFFF', padding: 20, borderRadius: 16, marginTop: 18, gap: 8 },
+  heading: { color: '#203B2A', fontWeight: '800', fontSize: 17 },
+  text: { color: '#384F3C', fontSize: 14 },
+  tab: { padding: 9, backgroundColor: '#E5E8DF', borderRadius: 8 },
+  tabActive: { backgroundColor: '#D8C59D' },
+  card: { backgroundColor: '#FFFFFF', padding: 18, borderRadius: 14, marginTop: 12, gap: 5 },
+  link: { color: '#174F92', fontWeight: '700' },
+  linkButton: { marginTop: 10 },
+  refund: { padding: 14, backgroundColor: '#F4F1E8', gap: 10, borderRadius: 10 },
+  input: { borderWidth: 1, borderColor: '#C4CABF', borderRadius: 8, padding: 10 },
 });

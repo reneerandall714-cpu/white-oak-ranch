@@ -105,9 +105,17 @@ export default function BookingScreen() {
     <Notice title={submission.receipt.status === 'PENDING' ? 'PENDING REVIEW' : submission.receipt.status}
       message={submission.receipt.status === 'PENDING'
         ? 'Staff must review this request. It is not a confirmed reservation, site hold or payment. Availability may change before approval.'
-        : submission.receipt.status === 'APPROVED'
-          ? 'Staff approved this request. Contact the ranch for your reservation details; no payment was collected here.'
-          : 'Staff rejected this request. No reservation was created or payment collected. Contact the ranch to discuss alternatives.'} />
+        : submission.receipt.status === 'AWAITING_PAYMENT'
+          ? 'Staff placed a temporary hold. Ask the ranch for your secure checkout link. The reservation is not confirmed until payment is verified.'
+          : submission.receipt.status === 'APPROVED'
+            ? 'Your initial payment was verified and the reservation is confirmed. Any remaining balance is due on the date shown at checkout.'
+            : submission.receipt.status === 'EXPIRED'
+              ? 'The unpaid hold expired. Contact the ranch to request another site.'
+              : submission.receipt.status === 'PAYMENT_REVIEW'
+                ? 'Your payment needs staff review. Contact the ranch before making another payment.'
+                : submission.receipt.status === 'CANCELLED'
+                  ? 'This reservation was cancelled by staff after payment review. Contact the ranch for details.'
+                : 'Staff rejected this request. No reservation was created or payment collected. Contact the ranch to discuss alternatives.'} />
     <View style={[s.summary, { marginTop: 20 }]}>
       <Text style={s.summaryKicker}>REQUEST REFERENCE</Text><Text selectable style={s.summaryTitle}>{submission.receipt.requestId}</Text>
       <Text style={s.summarySub}>{submission.draft.unit} · {submission.draft.stayType} · {submission.draft.arrival} to {submission.draft.departure}</Text>

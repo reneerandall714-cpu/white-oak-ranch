@@ -15,5 +15,9 @@ export const PUBLIC_AVAILABILITY_ENABLED = true;
 
 // Both remain off in production. Staging requires an isolated URL and an
 // explicit post-integration-test opt-in; never set that opt-in before tests pass.
-export const CUSTOMER_REQUEST_SUBMISSION_ENABLED = STAGING_BOOKING_REQUESTS_ENABLED;
-export const STAFF_BOOKING_REQUESTS_ENABLED = STAGING_BOOKING_REQUESTS_ENABLED;
+// Square Sandbox remains off until an isolated backend, signed webhook, and
+// expiration reconciliation have been exercised with synthetic payments.
+export const SQUARE_SANDBOX_CHECKOUT_ENABLED = STAGING_BOOKING_REQUESTS_ENABLED
+  && process.env.EXPO_PUBLIC_SQUARE_SANDBOX_VERIFIED === 'true';
+export const CUSTOMER_REQUEST_SUBMISSION_ENABLED = SQUARE_SANDBOX_CHECKOUT_ENABLED;
+export const STAFF_BOOKING_REQUESTS_ENABLED = SQUARE_SANDBOX_CHECKOUT_ENABLED;

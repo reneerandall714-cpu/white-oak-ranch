@@ -1,0 +1,56 @@
+name: Manual synthetic Supabase staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Construct separate local project from reviewed SQL only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ranch-staging"
+          cd "$RUNNER_TEMP/ranch-staging"
+          supabase init
+          cp "$GITHUB_WORKSPACE/staging/00_ranch_baseline.sql" supabase/migrations/20261101000000_synthetic_baseline.sql
+          cp "$GITHUB_WORKSPACE/supabase/migrations/20261102222837_deluxe_rv_weekly_total.sql" supabase/migrations/
+          cp "$GITHUB_WORKSPACE/supabase/migrations/20261103005539_public_unit_availability.sql" supabase/migrations/
+          cp "$GITHUB_WORKSPACE/supabase/migrations/20261103012314_booking_requests.sql" supabase/migrations/
+          cp "$GITHUB_WORKSPACE/supabase/migrations/20261104190000_square_sandbox_payments.sql" supabase/migrations/
+          test "$(find supabase/migrations -maxdepth 1 -type f | wc -l)" -eq 5
+          if find supabase/migrations -name '*20261101150000*' | grep -q .; then exit 1; fi
+          sha256sum supabase/migrations/*.sql
+      - name: Start ephemeral Supabase stack and test synthetic booking/payment state
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/ranch-staging"
+          supabase start
+          supabase status -o env > "$RUNNER_TEMP/ranch-local-status.env"
+          set -a
+          source "$RUNNER_TEMP/ranch-local-status.env"
+          set +a
+          STAGING_TEST_RUN=YES +          EXPO_PUBLIC_SUPABASE_ENV=staging +          EXPO_PUBLIC_SUPABASE_URL="$API_URL" +          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$ANON_KEY" +          STAGING_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" +            node --test "$GITHUB_WORKSPACE/staging/integration.test.mjs"
+      - name: Stop local stack
+        if: always()
+        shell: bash
+        run: |
+          if [ -d "$RUNNER_TEMP/ranch-staging/supabase" ]; then
+            cd "$RUNNER_TEMP/ranch-staging"
+            supabase stop --no-backup || true
+          fi
