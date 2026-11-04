@@ -7,4 +7,6 @@ verify_jwt = false
 [functions.square-expire-holds]
 verify_jwt = false
 [functions.square-refund]
-verify_jwt = false
+verify_jwt = true
+[functions.square-cancel-booking]
+verify_jwt = true

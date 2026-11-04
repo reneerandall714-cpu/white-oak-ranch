@@ -26,8 +26,12 @@ Deno.serve(async (req) => {
       const deposit = cfg.deposit_type === 'FIXED'
         ? Math.round(Number(cfg.deposit_value) * 100)
         : Math.ceil(total * Number(cfg.deposit_value) / 100);
+      const chicagoParts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date()).map((part) => [part.type, part.value]));
+      const chicagoToday = chicagoParts.year + '-' + chicagoParts.month + '-' + chicagoParts.day;
       const depositAvailable = cfg.deposit_type !== 'FULL' && deposit > 0 && deposit < total &&
-        due.toISOString().slice(0, 10) > new Date().toISOString().slice(0, 10);
+        due.toISOString().slice(0, 10) > chicagoToday;
       return json({
         unit: request.unit, arrival: request.arrival, departure: request.departure,
         totalCents: total, status: request.status, expiresAt: request.hold_expires_at,

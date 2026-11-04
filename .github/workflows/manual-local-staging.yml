@@ -45,7 +45,12 @@ jobs:
           set -a
           source "$RUNNER_TEMP/ranch-local-status.env"
           set +a
-          STAGING_TEST_RUN=YES +          EXPO_PUBLIC_SUPABASE_ENV=staging +          EXPO_PUBLIC_SUPABASE_URL="$API_URL" +          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$ANON_KEY" +          STAGING_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" +            node --test "$GITHUB_WORKSPACE/staging/integration.test.mjs"
+          STAGING_TEST_RUN=YES \
+          EXPO_PUBLIC_SUPABASE_ENV=staging \
+          EXPO_PUBLIC_SUPABASE_URL="$API_URL" \
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$ANON_KEY" \
+          STAGING_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
+            node --test "$GITHUB_WORKSPACE/staging/integration.test.mjs"
       - name: Stop local stack
         if: always()
         shell: bash

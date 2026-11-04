@@ -13,15 +13,20 @@ type PaymentRow = {
   created_at: string; paid_at: string | null;
   ranch_booking_requests: {
     guest_name: string; unit: string; quoted_total: number;
-    balance_due_cents: number | null; balance_due_on: string | null; status: string;
+    balance_due_cents: number | null; balance_due_on: string | null;
+    payment_choice: string | null; status: string;
   } | null;
   ranch_day_pass_orders: { guest_name: string; visit_date: string; status: string } | null;
 };
+type RefundRow = { square_refund_id: string; payment_id: string; amount_cents: number; status: string; updated_at: string };
+type EventRow = { event_id: string; event_type: string; square_object_id: string | null; result: string; received_at: string };
 type Filter = 'ALL' | 'OPEN' | 'PAID' | 'FAILED' | 'REFUNDED' | 'REVIEW';
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 export default function PaymentsScreen() {
   const [rows, setRows] = useState<PaymentRow[]>([]);
+  const [refunds, setRefunds] = useState<RefundRow[]>([]);
+  const [events, setEvents] = useState<EventRow[]>([]);
   const [filter, setFilter] = useState<Filter>('ALL');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -36,21 +41,33 @@ export default function PaymentsScreen() {
   async function refresh() {
     if (!SQUARE_SANDBOX_CHECKOUT_ENABLED) return;
     setLoading(true); setMessage('');
-    const [{ data, error }, user] = await Promise.all([
+    const [{ data, error }, refundRows, eventRows, user] = await Promise.all([
       supabase.from('ranch_payments').select(
-        'id,request_id,day_pass_id,phase,amount_cents,status,square_payment_id,receipt_url,receipt_number,refunded_cents,requires_review,created_at,paid_at,ranch_booking_requests(guest_name,unit,quoted_total,balance_due_cents,balance_due_on,status),ranch_day_pass_orders(guest_name,visit_date,status)'
+        'id,request_id,day_pass_id,phase,amount_cents,status,square_payment_id,receipt_url,receipt_number,refunded_cents,requires_review,created_at,paid_at,ranch_booking_requests(guest_name,unit,quoted_total,balance_due_cents,balance_due_on,payment_choice,status),ranch_day_pass_orders(guest_name,visit_date,status)'
       ).order('created_at', { ascending: false }).limit(200),
+      supabase.from('ranch_payment_refunds').select('square_refund_id,payment_id,amount_cents,status,updated_at')
+        .order('updated_at', { ascending: false }).limit(200),
+      supabase.from('ranch_payment_events').select('event_id,event_type,square_object_id,result,received_at')
+        .order('received_at', { ascending: false }).limit(200),
       supabase.auth.getUser(),
     ]);
-    if (error) setMessage('Could not load payment records. Sign in as active staff and retry.');
-    else setRows((data ?? []) as unknown as PaymentRow[]);
+    if (error || refundRows.error || eventRows.error) setMessage('Could not load payment records. Sign in as active staff and retry.');
+    else {
+      setRows((data ?? []) as unknown as PaymentRow[]);
+      setRefunds((refundRows.data ?? []) as RefundRow[]);
+      setEvents((eventRows.data ?? []) as EventRow[]);
+    }
     if (user.data.user) {
       const staff = await supabase.from('ranch_staff').select('role').eq('user_id', user.data.user.id).maybeSingle();
       setRole(staff.data?.role ?? '');
     }
     setLoading(false);
   }
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => { void refresh(); }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function refund() {
     const row = rows.find((r) => r.id === refundId);
@@ -77,12 +94,12 @@ export default function PaymentsScreen() {
       setMessage('Enter a cancellation reason.'); return;
     }
     setSaving(true); setMessage('');
-    const { data, error } = await supabase.rpc('ranch_cancel_paid_booking', {
-      p_request_id: cancelId, p_reason: cancelReason.trim(),
+    const { data, error } = await supabase.functions.invoke('square-cancel-booking', {
+      body: { requestId: cancelId, reason: cancelReason.trim() },
     });
     setSaving(false);
-    if (error || data !== true) {
-      setMessage('Cancellation was not completed. All payments must be reconciled and refunded first.');
+    if (error || data?.cancelled !== true) {
+      setMessage('Cancellation is pending. Refund all payments; if a balance link was open, wait five minutes after it closes and retry.');
       return;
     }
     setCancelId(null); setCancelReason('');
@@ -95,12 +112,15 @@ export default function PaymentsScreen() {
       ? r.requires_review || r.status === 'REVIEW' : r.status === filter));
   const collected = rows.filter((r) => ['PAID', 'PARTIAL_REFUND', 'REFUNDED'].includes(r.status))
     .reduce((sum, r) => sum + r.amount_cents - r.refunded_cents, 0);
+  const deposits = rows.filter((r) => r.phase === 'INITIAL' &&
+    r.ranch_booking_requests?.payment_choice === 'DEPOSIT' && r.paid_at)
+    .reduce((sum, r) => sum + r.amount_cents - r.refunded_cents, 0);
   const outstanding = [...new Map(rows.filter((r) => r.request_id)
     .map((r) => [r.request_id, r.ranch_booking_requests?.balance_due_cents ?? 0])).values()]
     .reduce((sum, cents) => sum + cents, 0);
   const pending = rows.filter((r) => ['CREATED', 'OPEN', 'FAILED'].includes(r.status))
     .reduce((sum, r) => sum + r.amount_cents, 0);
-  const refunds = rows.reduce((sum, r) => sum + r.refunded_cents, 0);
+  const refundedTotal = rows.reduce((sum, r) => sum + r.refunded_cents, 0);
 
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
     <TouchableOpacity onPress={() => router.back()}><Text style={s.back}>‹ Back</Text></TouchableOpacity>
@@ -112,9 +132,10 @@ export default function PaymentsScreen() {
       {loading && <ActivityIndicator />}
       {!!message && <Text accessibilityLiveRegion="polite" style={s.note}>{message}</Text>}
       <View style={s.summary}><Text style={s.heading}>Collected {money(collected)}</Text>
+        <Text style={s.text}>Deposits received {money(deposits)}</Text>
         <Text style={s.text}>Unpaid links {money(pending)}</Text>
         <Text style={s.text}>Reservation balances due {money(outstanding)}</Text>
-        <Text style={s.text}>Refunded {money(refunds)}</Text>
+        <Text style={s.text}>Refunded {money(refundedTotal)}</Text>
         <Text style={s.note}>Most recent 200 payment records; totals reflect this page.</Text></View>
       <View style={s.row}>{(['ALL', 'OPEN', 'PAID', 'FAILED', 'REFUNDED', 'REVIEW'] as const).map((value) =>
         <TouchableOpacity key={value} onPress={() => setFilter(value)} style={[s.tab, filter === value && s.tabActive]}>
@@ -129,9 +150,17 @@ export default function PaymentsScreen() {
           <Text style={s.text}>Reservation: {r.ranch_booking_requests.status}</Text></>}
         {r.paid_at && <Text style={s.text}>Received: {new Date(r.paid_at).toLocaleString()}</Text>}
         {r.refunded_cents > 0 && <Text style={s.text}>Refunded: {money(r.refunded_cents)}</Text>}
+        {r.phase === 'INITIAL' && r.ranch_booking_requests?.payment_choice === 'DEPOSIT' &&
+          <Text style={s.text}>Deposit received: {money(r.paid_at ? r.amount_cents - r.refunded_cents : 0)}</Text>}
         {r.square_payment_id && <Text selectable style={s.note}>Square payment {r.square_payment_id}</Text>}
         {r.receipt_number && <Text style={s.text}>Receipt {r.receipt_number}</Text>}
         {r.receipt_url && <TouchableOpacity onPress={() => void Linking.openURL(r.receipt_url!)}><Text style={s.link}>Open Square receipt</Text></TouchableOpacity>}
+        {refunds.filter((refund) => refund.payment_id === r.id).map((refund) =>
+          <Text key={refund.square_refund_id} style={s.text}>Refund {refund.status}: {money(refund.amount_cents)} · {new Date(refund.updated_at).toLocaleString()}</Text>)}
+        {events.filter((event) => (r.square_payment_id && event.square_object_id === r.square_payment_id) ||
+          refunds.some((refund) => refund.payment_id === r.id && refund.square_refund_id === event.square_object_id))
+          .slice(0, 8).map((event) =>
+            <Text key={event.event_id} style={s.note}>{new Date(event.received_at).toLocaleString()} · {event.event_type}: {event.result}</Text>)}
         <Text style={s.note}>Created {new Date(r.created_at).toLocaleString()}</Text>
         {['owner', 'admin'].includes(role) && r.square_payment_id &&
           ['PAID', 'PARTIAL_REFUND'].includes(r.status) && r.refunded_cents < r.amount_cents &&

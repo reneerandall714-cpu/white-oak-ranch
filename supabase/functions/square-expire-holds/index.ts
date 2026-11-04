@@ -60,9 +60,10 @@ Deno.serve(async (req) => {
         results.push({ id: hold.id, result: 'retry_required' });
       }
     }
-    const day = new Intl.DateTimeFormat('en-CA', {
+    const dayParts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date());
+    }).formatToParts(new Date()).map((part) => [part.type, part.value]));
+    const day = dayParts.year + '-' + dayParts.month + '-' + dayParts.day;
     const passes = await admin.from('ranch_day_pass_orders').select('id')
       .in('status', ['UNPAID', 'FAILED']).lt('visit_date', day).limit(100);
     if (passes.error) throw passes.error;

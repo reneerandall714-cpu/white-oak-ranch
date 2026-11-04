@@ -317,6 +317,9 @@ begin
     values (v.id, 'BALANCE', v.balance_due_cents)
     on conflict (request_id, phase) do nothing;
   select * into p from public.ranch_payments where request_id = v.id and phase = 'BALANCE';
+  if p.status not in ('CREATED','OPEN','FAILED') then
+    raise exception 'Balance payment requires review' using errcode = 'WR409';
+  end if;
   payment_id := p.id; amount_cents := p.amount_cents; email := v.email;
   label := 'Reservation balance ' || v.unit;
   checkout_url := p.checkout_url; square_order_id := p.square_order_id;
@@ -358,6 +361,9 @@ begin
   insert into public.ranch_payments(day_pass_id, phase, amount_cents)
     values (d.id, 'DAY_PASS', n) on conflict (day_pass_id, phase) do nothing;
   select * into p from public.ranch_payments where day_pass_id = d.id;
+  if d.status not in ('UNPAID','FAILED') or p.status not in ('CREATED','OPEN','FAILED') then
+    raise exception 'Day pass checkout is closed' using errcode = 'WR409';
+  end if;
   payment_id := p.id; amount_cents := p.amount_cents; email := d.email;
   label := 'Day pass ' || d.visit_date::text; checkout_url := p.checkout_url;
   square_order_id := p.square_order_id; return next;
@@ -371,7 +377,7 @@ as $function$
 begin
   update public.ranch_payments set square_link_id = p_link_id,
     square_order_id = p_order_id, checkout_url = p_url, status = 'OPEN', updated_at = now()
-  where id = p_payment_id and status in ('CREATED', 'OPEN')
+  where id = p_payment_id and status in ('CREATED', 'OPEN', 'FAILED')
     and (square_link_id is null or square_link_id = p_link_id)
     and (square_order_id is null or square_order_id = p_order_id);
   if not found then raise exception 'Payment link conflict' using errcode = 'WR409'; end if;
@@ -390,6 +396,9 @@ begin
     return 'duplicate';
   end if;
   select * into p from public.ranch_payments where square_order_id = p_order_id for update;
+  if exists (select 1 from public.ranch_payment_events where event_id = p_event_id) then
+    return 'duplicate';
+  end if;
   if not found then result := 'unknown_order';
   elsif p_amount_cents is distinct from p.amount_cents then
     update public.ranch_payments set status = 'REVIEW', requires_review = true,
@@ -450,7 +459,7 @@ begin
         end if;
       end if;
     end if;
-  elsif p_status in ('FAILED', 'CANCELED') and p.status not in ('PAID', 'REFUNDED') then
+  elsif p_status in ('FAILED', 'CANCELED') and p.status in ('CREATED', 'OPEN', 'FAILED') then
     update public.ranch_payments set status = 'FAILED', updated_at = now() where id = p.id;
     if p.phase = 'DAY_PASS' then update public.ranch_day_pass_orders set status = 'FAILED' where id = p.day_pass_id; end if;
     result := 'failed';
@@ -484,7 +493,9 @@ begin
     where payment_id = p.id and status = 'COMPLETED';
   update public.ranch_payments set refunded_cents = n,
     status = case when n >= amount_cents then 'REFUNDED'
-      when n > 0 then 'PARTIAL_REFUND' else 'REFUND_PENDING' end,
+      when n > 0 then 'PARTIAL_REFUND'
+      when p_status in ('FAILED','REJECTED') then 'PAID'
+      else 'REFUND_PENDING' end,
     requires_review = true, updated_at = now() where id = p.id;
   if p.phase = 'DAY_PASS' and n >= p.amount_cents then
     update public.ranch_day_pass_orders set status = 'REFUNDED' where id = p.day_pass_id;
@@ -688,7 +699,9 @@ begin
   end if;
   perform 1 from public.ranch_payments where request_id = b.id for update;
   if exists (select 1 from public.ranch_payments p where p.request_id = b.id
-    and p.status not in ('REFUNDED','EXPIRED')) then
+    and (p.status not in ('REFUNDED','EXPIRED')
+      or (p.phase = 'BALANCE' and p.status = 'EXPIRED'
+        and (p.closed_at is null or p.closed_at > now() - interval '5 minutes')))) then
     raise exception 'Reconcile and refund payments first' using errcode = 'WR409';
   end if;
   update public.ranch_reservations set status = 'CANCELLED'
