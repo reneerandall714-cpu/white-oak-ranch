@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { StaffAuthProvider, useStaffAuth } from '../contexts/staff-auth-context';
 import { loadReservations } from '../data/reservationdata';
 import { IS_STAGING_BUILD } from '../constants/staging-environment';
+import { OwnerDemo } from '../components/owner-demo';
 
 function LoadingScreen() {
   return (
@@ -44,6 +45,11 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  if (process.env.EXPO_PUBLIC_OWNER_DEMO === 'true') return <OwnerDemo />;
+  return <RanchLayout />;
+}
+
+function RanchLayout() {
   useEffect(() => {
     void loadReservations();
   }, []);
