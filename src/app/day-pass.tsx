@@ -3,7 +3,9 @@ import { randomUUID } from 'expo-crypto';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ExternalLink } from '../components/external-link';
 import { SQUARE_SANDBOX_CHECKOUT_ENABLED } from '../constants/feature-flags';
+import { RANCH_CONFIG } from '../data/ranchConfig';
 import { supabase } from '../lib/supabase';
 
 type Rates = { enabled: boolean; primaryCents: number; additionalCents: number; atvCents: number };
@@ -60,8 +62,17 @@ export default function DayPassScreen() {
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page}>
     <TouchableOpacity onPress={() => router.back()}><Text style={s.back}>‹ Back</Text></TouchableOpacity>
     <Text style={s.title}>Day Pass</Text>
-    <Text style={s.note}>Square Sandbox checkout is available after the owner approves day pass rates. No live payment is collected.</Text>
-    {!SQUARE_SANDBOX_CHECKOUT_ENABLED && <Text style={s.note}>Online day pass checkout is not available yet.</Text>}
+    {SQUARE_SANDBOX_CHECKOUT_ENABLED ? (
+      <Text style={s.note}>Test checkout only. No live payment is collected.</Text>
+    ) : <>
+      <Text style={s.note}>Online day pass checkout is not available yet.</Text>
+      <ExternalLink href={RANCH_CONFIG.ranch.reservationsPage} style={s.websiteLink}>
+        See day-pass pricing on the ranch website
+      </ExternalLink>
+      <ExternalLink href={RANCH_CONFIG.ranch.contactPage} style={s.websiteLink}>
+        Ask the ranch about ATV / SxS access
+      </ExternalLink>
+    </>}
     {SQUARE_SANDBOX_CHECKOUT_ENABLED && !rates && <ActivityIndicator />}
     {rates && !rates.enabled && <Text style={s.note}>Day pass pricing has not been activated by the owner.</Text>}
     {rates?.enabled && <View style={s.card}>
@@ -83,6 +94,7 @@ export default function DayPassScreen() {
   </ScrollView></SafeAreaView>;
 }
 const s = StyleSheet.create({
+  websiteLink: { color: '#203B2A', fontSize: 16, fontWeight: '700', textDecorationLine: 'underline', paddingVertical: 14 },
   safe: { flex: 1, backgroundColor: '#F4F1E8' },
   page: { padding: 20, paddingBottom: 50, maxWidth: 640, width: '100%', alignSelf: 'center' },
   back: { color: '#203B2A', marginBottom: 18 },

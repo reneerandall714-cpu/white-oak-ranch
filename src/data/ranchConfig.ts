@@ -3,6 +3,9 @@ export const RANCH_CONFIG = {
     name: 'White Oak Ranch',
     location: 'Dunlap, Tennessee',
     phone: '931.259.1190',
+    website: 'https://whiteoakranch.us/',
+    reservationsPage: 'https://whiteoakranch.us/reservations-and-pricing/',
+    contactPage: 'https://whiteoakranch.us/contact/',
   },
 
   inventory: {

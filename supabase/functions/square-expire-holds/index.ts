@@ -19,13 +19,16 @@ Deno.serve(async (req) => {
     const results = [];
     for (const hold of data ?? []) {
       try {
-        const { data: payment } = await admin.from('ranch_payments').select('*')
+        const { data: payment, error: paymentError } = await admin.from('ranch_payments').select('*')
           .eq('request_id', hold.id).eq('phase', 'INITIAL').maybeSingle();
+        if (paymentError) throw paymentError;
         if (payment && !payment.square_link_id) {
-          await admin.from('ranch_payments').update({ requires_review: true }).eq('id', payment.id);
+          const review = await admin.from('ranch_payments').update({ requires_review: true }).eq('id', payment.id);
+          if (review.error) throw review.error;
           results.push({ id: hold.id, result: 'link_creation_uncertain' });
           continue;
         }
+        if (payment && !payment.square_order_id) throw new Error('Payment link is missing its Square order');
         if (payment?.square_link_id && ['OPEN', 'FAILED'].includes(payment.status)) {
           // Delete first: Square cancels the underlying order and prevents
           // another checkout. Confirm the order state and tenders afterwards.
@@ -41,8 +44,9 @@ Deno.serve(async (req) => {
         if (payment?.square_order_id) {
           await reconcilePayment(payment.square_order_id,
             'reconcile:' + hold.id + ':' + Date.now(), 'expiry_reconciliation');
-          const { data: refreshed } = await admin.from('ranch_payments').select('status')
+          const { data: refreshed, error: refreshError } = await admin.from('ranch_payments').select('status')
             .eq('id', payment.id).single();
+          if (refreshError) throw refreshError;
           if (!refreshed || !['EXPIRED', 'FAILED'].includes(refreshed.status)) {
             results.push({ id: hold.id, result: 'payment_reconciled_or_review' });
             continue;
@@ -70,13 +74,18 @@ Deno.serve(async (req) => {
     const dayPassResults = [];
     for (const pass of passes.data ?? []) {
       try {
-        const { data: payment } = await admin.from('ranch_payments').select('*')
+        const { data: payment, error: paymentError } = await admin.from('ranch_payments').select('*')
           .eq('day_pass_id', pass.id).single();
+        if (paymentError) throw paymentError;
         if (!payment?.square_link_id) {
-          if (payment) await admin.from('ranch_payments').update({ requires_review: true }).eq('id', payment.id);
+          if (payment) {
+            const review = await admin.from('ranch_payments').update({ requires_review: true }).eq('id', payment.id);
+            if (review.error) throw review.error;
+          }
           dayPassResults.push({ id: pass.id, result: 'link_creation_uncertain' });
           continue;
         }
+        if (!payment.square_order_id) throw new Error('Payment link is missing its Square order');
         if (['OPEN', 'FAILED'].includes(payment.status)) {
           try {
             await square('/online-checkout/payment-links/' + encodeURIComponent(payment.square_link_id),
@@ -89,8 +98,9 @@ Deno.serve(async (req) => {
         }
         await reconcilePayment(payment.square_order_id,
           'reconcile-day:' + pass.id + ':' + Date.now(), 'day_pass_reconciliation');
-        const { data: refreshed } = await admin.from('ranch_payments').select('status')
+        const { data: refreshed, error: refreshError } = await admin.from('ranch_payments').select('status')
           .eq('id', payment.id).single();
+        if (refreshError) throw refreshError;
         const order = (await square('/orders/' + encodeURIComponent(payment.square_order_id))).order;
         if (!refreshed || !['EXPIRED', 'FAILED'].includes(refreshed.status) || order?.state !== 'CANCELED') {
           dayPassResults.push({ id: pass.id, result: 'payment_reconciled_or_review' });

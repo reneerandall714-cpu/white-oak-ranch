@@ -3,6 +3,7 @@ import { randomUUID } from 'expo-crypto';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ExternalLink } from '../components/external-link';
 import { CUSTOMER_REQUEST_SUBMISSION_ENABLED, PUBLIC_AVAILABILITY_ENABLED } from '../constants/feature-flags';
 import { validateBookingRequest, type BookingRequestDraft, type BookingRequestReceipt } from '../data/bookingRequests';
 import { availableUnitsForStay, CUSTOMER_STAY_TYPES, maxGuestsForStay, validateStayDates, type CustomerStayChoice, type PublicUnit } from '../data/customerAvailability';
@@ -136,6 +137,12 @@ export default function BookingScreen() {
         <Text style={s.pill}>{CUSTOMER_REQUEST_SUBMISSION_ENABLED ? 'REQUEST A STAY · STAFF CONFIRMATION REQUIRED' : 'REQUEST PREVIEW ONLY · NO ONLINE BOOKING'}</Text>
       </View>
       <View style={s.content}>
+        {!CUSTOMER_REQUEST_SUBMISSION_ENABLED && <>
+          <ExternalLink href={RANCH_CONFIG.ranch.reservationsPage} style={s.websiteLink}>
+            Reservations and pricing on the ranch website
+          </ExternalLink>
+          <Text style={s.hint}>App prices below are preview estimates. Confirm current rates with the ranch.</Text>
+        </>}
         <Text style={s.kicker}>01 · WHEN</Text><Text style={s.heading}>Pick your dates</Text>
         <View style={s.dates}>
           <View style={s.dateField}><Text style={s.label}>ARRIVAL</Text><TextInput accessibilityLabel="Arrival date" placeholder="YYYY-MM-DD" placeholderTextColor="#8B918B" style={s.input} value={arrival} maxLength={10} autoCapitalize="none" keyboardType="numbers-and-punctuation" onChangeText={(value) => { setArrival(value); resetAvailability(); }} /></View>
@@ -214,6 +221,7 @@ function PriceRow({ label, value }: { label: string; value: number }) {
 }
 
 const s = StyleSheet.create({
+  websiteLink: { color: '#203B2A', fontSize: 16, fontWeight: '700', textDecorationLine: 'underline', paddingVertical: 14 },
   safe: { flex: 1, backgroundColor: '#F4F1E8' }, page: { paddingBottom: 50 },
   hero: { backgroundColor: '#203B2A', paddingHorizontal: 24, paddingTop: 20, paddingBottom: 34 },
   back: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#365340', alignItems: 'center', justifyContent: 'center', marginBottom: 28 },

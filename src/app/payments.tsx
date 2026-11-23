@@ -30,6 +30,7 @@ export default function PaymentsScreen() {
   const [filter, setFilter] = useState<Filter>('ALL');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [role, setRole] = useState('');
   const [refundId, setRefundId] = useState<string | null>(null);
   const [refundAmount, setRefundAmount] = useState('');
@@ -40,7 +41,7 @@ export default function PaymentsScreen() {
 
   async function refresh() {
     if (!SQUARE_SANDBOX_CHECKOUT_ENABLED) return;
-    setLoading(true); setMessage('');
+    setLoading(true);
     const [{ data, error }, refundRows, eventRows, user] = await Promise.all([
       supabase.from('ranch_payments').select(
         'id,request_id,day_pass_id,phase,amount_cents,status,square_payment_id,receipt_url,receipt_number,refunded_cents,requires_review,created_at,paid_at,ranch_booking_requests(guest_name,unit,quoted_total,balance_due_cents,balance_due_on,payment_choice,status),ranch_day_pass_orders(guest_name,visit_date,status)'
@@ -51,16 +52,17 @@ export default function PaymentsScreen() {
         .order('received_at', { ascending: false }).limit(200),
       supabase.auth.getUser(),
     ]);
-    if (error || refundRows.error || eventRows.error) setMessage('Could not load payment records. Sign in as active staff and retry.');
+    if (error || refundRows.error || eventRows.error) setLoadError('Could not load payment records. Sign in as active staff and retry.');
     else {
+      setLoadError('');
       setRows((data ?? []) as unknown as PaymentRow[]);
       setRefunds((refundRows.data ?? []) as RefundRow[]);
       setEvents((eventRows.data ?? []) as EventRow[]);
     }
     if (user.data.user) {
-      const staff = await supabase.from('ranch_staff').select('role').eq('user_id', user.data.user.id).maybeSingle();
+      const staff = await supabase.from('ranch_staff').select('role').eq('user_id', user.data.user.id).eq('active', true).maybeSingle();
       setRole(staff.data?.role ?? '');
-    }
+    } else setRole('');
     setLoading(false);
   }
   useEffect(() => {
@@ -70,8 +72,10 @@ export default function PaymentsScreen() {
   }, []);
 
   async function refund() {
+    if (saving) return;
     const row = rows.find((r) => r.id === refundId);
-    const cents = Math.round(Number(refundAmount) * 100);
+    const amount = refundAmount.trim();
+    const cents = /^\d+(\.\d{1,2})?$/.test(amount) ? Math.round(Number(amount) * 100) : NaN;
     if (!row || !Number.isSafeInteger(cents) || cents <= 0 ||
       cents > row.amount_cents - row.refunded_cents || !refundReason.trim()) {
       setMessage('Enter a valid refund amount and reason.'); return;
@@ -131,6 +135,7 @@ export default function PaymentsScreen() {
         <TouchableOpacity onPress={() => router.push('/payment-settings')} style={s.button}><Text style={s.buttonText}>Payment settings</Text></TouchableOpacity></View>
       {loading && <ActivityIndicator />}
       {!!message && <Text accessibilityLiveRegion="polite" style={s.note}>{message}</Text>}
+      {!!loadError && <Text accessibilityLiveRegion="polite" style={s.note}>{loadError}</Text>}
       <View style={s.summary}><Text style={s.heading}>Collected {money(collected)}</Text>
         <Text style={s.text}>Deposits received {money(deposits)}</Text>
         <Text style={s.text}>Unpaid links {money(pending)}</Text>

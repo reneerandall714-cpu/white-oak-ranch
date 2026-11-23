@@ -8,6 +8,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ExternalLink } from '../components/external-link';
+import { RANCH_CONFIG } from '../data/ranchConfig';
 
 export default function HomeScreen() {
   return (
@@ -143,6 +145,9 @@ export default function HomeScreen() {
 
           <Text style={styles.footerTitle}>WHITE OAK RANCH</Text>
           <Text style={styles.footerText}>Dunlap, Tennessee</Text>
+          <ExternalLink href={RANCH_CONFIG.ranch.website} style={styles.websiteLink}>
+            Visit the ranch website
+          </ExternalLink>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -170,6 +175,7 @@ function MenuCard({
 }
 
 const styles = StyleSheet.create({
+  websiteLink: { color: '#203B2A', fontSize: 16, fontWeight: '700', textDecorationLine: 'underline', paddingVertical: 14 },
   safeArea: {
     flex: 1,
     backgroundColor: '#F4F1E8',
