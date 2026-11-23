@@ -41,7 +41,7 @@ test('server SQL prices Deluxe blocks and other services without accepting clien
   assert.match(sql, /p_departure - p_arrival\) % 7\) \* q\.rate/);
   assert.match(sql, /when p_atv_access then 75/);
   assert.doesNotMatch(sql, /p_total|p_nightly_rate|p_quoted_total/);
-  for (const [nights, total] of [[6, 300], [7, 200], [8, 250], [13, 500], [14, 400]]) {
+  for (const [nights, total] of [[6, 270], [7, 200], [8, 245], [13, 470], [14, 400]]) {
     assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights }).total, total);
   }
   assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights: 7, atvAccess: true }).total, 275);

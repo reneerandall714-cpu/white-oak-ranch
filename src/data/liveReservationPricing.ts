@@ -1,39 +1,43 @@
 import { calculateStayPricing, type RVServiceName, type StayPricing } from './ranchConfig.ts';
 
-// Non-Deluxe weekly prices remain in the demo configuration. The live table
-// validates those stays at their nightly rate; only Deluxe has a weekly total.
-export function calculateLiveStayPricing(input: {
-  stayType: string;
-  rvService?: RVServiceName;
-  nights: number;
-  atvAccess?: boolean;
-}): StayPricing {
-  const configured = calculateStayPricing(input);
-  if (input.stayType !== 'RV Site' || input.rvService === 'Deluxe' || configured.weeklyBlocks === 0) {
-    return configured;
-  }
-  const remainingNightlyTotal = input.nights * configured.nightlyRate;
-  const lodgingTotal = remainingNightlyTotal;
+type StayPricingInput = Parameters<typeof calculateStayPricing>[0];
+
+export const calculateLiveStayPricing = calculateStayPricing;
+
+// Current staff writes still target the existing database rate constraints.
+// Use website rates after the matching SQL is verified in the target database.
+export function calculateStaffStayPricing(input: StayPricingInput): StayPricing {
+  const pricing = calculateStayPricing(input);
+  if (process.env.EXPO_PUBLIC_WEBSITE_RATES_VERIFIED === 'true') return pricing;
+
+  const deluxe = input.stayType === 'RV Site' && input.rvService === 'Deluxe';
+  const nightlyRate = deluxe ? 50 : input.stayType === 'Small Rental RV' ? 75
+    : input.stayType === 'Large Rental RV' ? 99 : pricing.nightlyRate;
+  const weeklyBlocks = deluxe ? pricing.weeklyBlocks : 0;
+  const weeklyBlockTotal = deluxe ? pricing.weeklyBlockTotal : 0;
+  const remainingNights = Math.max(0, input.nights) - weeklyBlocks * 7;
+  const remainingNightlyTotal = remainingNights * nightlyRate;
+  const lodgingTotal = weeklyBlockTotal + remainingNightlyTotal;
+
   return {
-    ...configured,
-    weeklyBlocks: 0,
-    weeklyBlockRate: null,
-    weeklyBlockTotal: 0,
-    remainingNights: input.nights,
+    ...pricing,
+    nightlyRate,
+    weeklyBlocks,
+    weeklyBlockRate: deluxe ? pricing.weeklyBlockRate : null,
+    weeklyBlockTotal,
+    remainingNights,
     remainingNightlyTotal,
     lodgingTotal,
-    total: lodgingTotal + configured.atvTotal,
-    usesWeeklyRate: false,
+    total: lodgingTotal + pricing.atvTotal,
+    usesWeeklyRate: weeklyBlocks > 0,
   };
 }
 
-// The applied database check accepts weekly totals only for Deluxe RV sites.
-// The feature flag keeps those writes independently controllable.
 export function canSaveLiveReservationPricing(
   pricing: StayPricing,
   rvService: RVServiceName | undefined,
-  deluxeWeeklyWritesEnabled: boolean
+  weeklyWritesEnabled: boolean
 ): boolean {
-  return pricing.weeklyBlocks === 0 ||
-    (rvService === 'Deluxe' && deluxeWeeklyWritesEnabled);
+  return pricing.weeklyBlocks === 0 || (weeklyWritesEnabled &&
+    (rvService === 'Deluxe' || process.env.EXPO_PUBLIC_WEBSITE_RATES_VERIFIED === 'true'));
 }

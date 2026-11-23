@@ -32,7 +32,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/supabase/migrations/20261103005539_public_unit_availability.sql" supabase/migrations/
           cp "$GITHUB_WORKSPACE/supabase/migrations/20261103012314_booking_requests.sql" supabase/migrations/
           cp "$GITHUB_WORKSPACE/supabase/migrations/20261104190000_square_sandbox_payments.sql" supabase/migrations/
-          test "$(find supabase/migrations -maxdepth 1 -type f | wc -l)" -eq 5
+          cp "$GITHUB_WORKSPACE/supabase/migrations/20261123175202_align_website_rates.sql" supabase/migrations/
+          test "$(find supabase/migrations -maxdepth 1 -type f | wc -l)" -eq 6
           if find supabase/migrations -name '*20261101150000*' | grep -q .; then exit 1; fi
           sha256sum supabase/migrations/*.sql
       - name: Start ephemeral Supabase stack and test synthetic booking/payment state

@@ -14,14 +14,14 @@ import { BOOKING_REQUEST_ERROR_TEXT, submitBookingRequest, type BookingRequestEr
 
 const STAYS: { key: CustomerStayChoice; title: string; details: string; rate: string }[] = [
   { key: 'rv-site', title: 'RV site', details: '11 sites · choose your service', rate: 'From $25/night' },
-  { key: 'tent', title: 'Tent campsite', details: '10 sites · up to 6 guests', rate: '$25/night' },
-  { key: 'small-rv', title: 'Small rental RV', details: 'Sleeps up to 5', rate: '$75/night' },
-  { key: 'large-rv', title: 'Large rental RV', details: 'Sleeps up to 8', rate: '$99/night' },
+  { key: 'tent', title: 'Tent campsite', details: '10 sites · up to 6 guests · extras confirmed by staff', rate: '$25/night' },
+  { key: 'small-rv', title: 'Small rental RV', details: 'Sleeps up to 5', rate: `$${RANCH_CONFIG.pricing.rentalRV.small.normal}/night` },
+  { key: 'large-rv', title: 'Large rental RV', details: 'Sleeps up to 8', rate: `$${RANCH_CONFIG.pricing.rentalRV.large.normal}/night` },
 ];
 const SERVICES: { name: RVServiceName; details: string; rate: string }[] = [
-  { name: 'Parking Only', details: 'No hookups', rate: '$25/night' },
+  { name: 'Parking Only', details: 'No hookups', rate: `$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night · $${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights` },
   { name: 'Electric + Water', details: 'Electric and water', rate: '$40/night' },
-  { name: 'Deluxe', details: 'Full hookup · electric, water, septic, Wi-Fi', rate: '$50/night · $200/7 nights' },
+  { name: 'Deluxe', details: 'Full hookup · electric, water, septic, Wi-Fi', rate: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night · $${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights` },
 ];
 const ERRORS: Record<PublicAvailabilityError, string> = {
   pending_approval: 'Live availability awaits approval of a secure database endpoint. No sites can be shown or requested online yet. Call the ranch to check your dates.',
@@ -157,7 +157,12 @@ export default function BookingScreen() {
 
         {choice === 'rv-site' && <View style={s.services}><Text style={s.label}>RV SERVICE</Text>{SERVICES.map((item) => <TouchableOpacity key={item.name} accessibilityRole="radio" accessibilityState={{ selected: service === item.name }} style={[s.service, service === item.name && s.selected]} onPress={() => { setService(item.name); resetRequest(); }}>
           <Text style={s.cardTitle}>{item.name}</Text><Text style={s.muted}>{item.details}</Text><Text style={s.rate}>{item.rate}</Text>
-        </TouchableOpacity>)}<Text style={s.hint}>Only Deluxe full-hookup has the $200 complete 7-night rate. Other RV services use nightly rates in this estimate; advertised weekly offers need staff confirmation.</Text></View>}
+        </TouchableOpacity>)}<Text style={s.hint}>Weekly rates apply to complete seven-night blocks for no-hookup and full-hookup RV stays.</Text></View>}
+
+        {stayType === 'Tent Site' && <Text style={s.hint}>
+          Base rate includes 2 adults, up to 4 children, and 1 vehicle. Additional adults are $10,
+          children $5, and vehicles $10. Contact the ranch to confirm extras before booking.
+        </Text>}
 
         {stayType && <>
           <View style={s.guestRow}><View><Text style={s.label}>GUESTS</Text><Text style={s.hint}>Up to {capacity} for this request</Text></View><View style={s.stepper}>
@@ -183,7 +188,7 @@ export default function BookingScreen() {
           <Text style={s.summaryKicker}>ESTIMATED PRICE · NOT A RESERVATION</Text><Text style={s.summaryTitle}>Your stay at a glance</Text>
           <Text style={s.summarySub}>{stayType}{unitId ? ` · ${unitId}` : ''} · {date.nights} nights · {guests} guests</Text>
           <Text style={s.summarySub}>{arrival} → {departure}{choice === 'rv-site' && service ? ` · ${service}` : ''}</Text>
-          {quote.weeklyBlocks > 0 && <PriceRow label={`${quote.weeklyBlocks} × complete 7-night Deluxe block`} value={quote.weeklyBlockTotal} />}
+          {quote.weeklyBlocks > 0 && <PriceRow label={`${quote.weeklyBlocks} × complete 7-night block`} value={quote.weeklyBlockTotal} />}
           {quote.remainingNights > 0 && <PriceRow label={`${quote.remainingNights} × $${quote.nightlyRate} night`} value={quote.remainingNightlyTotal} />}
           {quote.atvTotal > 0 && <PriceRow label="ATV / SxS · per stay" value={quote.atvTotal} />}
           <View style={s.total}><Text style={s.totalText}>Estimated total</Text><Text style={s.totalAmount}>${quote.total}</Text></View>

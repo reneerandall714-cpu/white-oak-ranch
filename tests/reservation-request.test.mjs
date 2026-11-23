@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateStayPricing } from '../src/data/ranchConfig.ts';
+import { calculateStaffStayPricing } from '../src/data/liveReservationPricing.ts';
 import {
   buildReservationInsert,
   buildReservationUpdate,
@@ -10,7 +10,7 @@ import {
 } from '../src/repositories/reservation-request.ts';
 
 test('live Deluxe weekly insert leaves generated nights and staff identity to the database', () => {
-  const pricing = calculateStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights: 7 });
+  const pricing = calculateStaffStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights: 7 });
   const row = buildReservationInsert({
     guestName: ' Sample Guest ',
     phone: '',

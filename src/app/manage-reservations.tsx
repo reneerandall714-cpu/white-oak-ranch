@@ -308,27 +308,26 @@ export default function ReservationsScreen() {
 
           <ServiceRow
             title="Parking Only"
-            price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night live • $${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights demo only`}
+            price={`$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night • $${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights`}
             description="RV site without utility hookups"
           />
 
           <ServiceRow
             title="Electric + Water"
-            price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night live • $${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights demo only`}
+            price={`$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`}
             description="Electric and water access"
           />
 
           <ServiceRow
             title="Deluxe (Full Hookup)"
-            price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night live • $${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights live`}
+            price={`$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night • $${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights`}
             description="Water, electric, septic & high-speed internet"
           />
 
           <Text style={styles.serviceNote}>
             All 11 RV sites are physically capable of full hookups.
             Purchased utilities determine which services are unlocked
-            for each reservation. Only Deluxe weekly totals are currently
-            supported for live staff reservations.
+            for each reservation. Rates shown here are the published website rates.
           </Text>
         </View>
 

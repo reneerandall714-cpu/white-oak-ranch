@@ -50,12 +50,12 @@ test('public response projection strips private fields and rejects malformed dat
   assert.equal(normalizePublicUnits({ unit_id: 'RV 05' }), null);
 });
 
-test('customer quote uses only Deluxe complete weekly blocks and one ATV fee', () => {
-  for (const [nights, total] of [[6, 300], [7, 200], [8, 250], [13, 500], [14, 400]]) {
+test('customer quote uses advertised complete weekly blocks and one ATV fee', () => {
+  for (const [nights, total] of [[6, 270], [7, 200], [8, 245], [13, 470], [14, 400]]) {
     assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights }).total, total);
   }
-  assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights: 8, atvAccess: true }).total, 325);
-  assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Parking Only', nights: 7 }).total, 175);
+  assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Deluxe', nights: 8, atvAccess: true }).total, 320);
+  assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Parking Only', nights: 7 }).total, 100);
   assert.equal(calculateLiveStayPricing({ stayType: 'RV Site', rvService: 'Electric + Water', nights: 7 }).total, 280);
   assert.equal(calculateLiveStayPricing({ stayType: 'Tent Site', nights: 7 }).total, 175);
 });

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { calculateNights, formatDateKey, isValidStayRange, parseDateInput, type ReservationRecord } from '../data/reservationdata';
-import { calculateLiveStayPricing } from '../data/liveReservationPricing';
+import { calculateStaffStayPricing } from '../data/liveReservationPricing';
 import type { RVServiceName } from '../data/ranchConfig';
 import { formatDateInput, formatPhoneInput } from '../utils/formatters';
 import { listStaffInventory, type RanchUnit } from '../repositories/inventory-repository';
@@ -95,7 +95,7 @@ export default function StaffReservationDetailScreen() {
   useEffect(() => { void load(); }, [load]);
 
   const nights = draft ? calculateNights(draft.arrival, draft.departure) ?? 0 : 0;
-  const pricing = useMemo(() => calculateLiveStayPricing({
+  const pricing = useMemo(() => calculateStaffStayPricing({
     stayType: reservation?.stayType ?? '',
     rvService: reservation?.stayType === 'RV Site' ? draft?.rvService : undefined,
     nights,

@@ -37,20 +37,20 @@ export const RANCH_CONFIG = {
       parkingOnly: {
         name: 'Parking Only',
         nightly: 25,
-        weekly: 150,
+        weekly: 100,
         fullHookup: false,
       },
 
       electricWater: {
         name: 'Electric + Water',
         nightly: 40,
-        weekly: 225,
+        weekly: null,
         fullHookup: false,
       },
 
       deluxe: {
         name: 'Deluxe',
-        nightly: 50,
+        nightly: 45,
         weekly: 200,
         fullHookup: true,
       },
@@ -58,18 +58,18 @@ export const RANCH_CONFIG = {
 
     rentalRV: {
       small: {
-        normal: 75,
+        normal: 99,
         eventHoliday: 99,
       },
 
       large: {
-        normal: 99,
+        normal: 125,
         eventHoliday: 125,
       },
     },
 
     dayPass: {
-      primary: 15,
+      primary: 10,
       additional: 10,
       atvSxs: 50,
     },
@@ -179,8 +179,8 @@ export function calculateStayPricing({
           ? RANCH_CONFIG.pricing.rentalRV.large.normal
           : 0
   );
-  const weeklyBlocks = rvRate ? Math.floor(safeNights / 7) : 0;
-  const remainingNights = rvRate ? safeNights % 7 : safeNights;
+  const weeklyBlocks = rvRate?.weekly ? Math.floor(safeNights / 7) : 0;
+  const remainingNights = safeNights - weeklyBlocks * 7;
   const weeklyBlockRate = rvRate && weeklyBlocks > 0 ? rvRate.weekly : null;
   const weeklyBlockTotal = weeklyBlocks * (rvRate?.weekly ?? 0);
   const remainingNightlyTotal = remainingNights * nightlyRate;
@@ -197,6 +197,6 @@ export function calculateStayPricing({
     lodgingTotal,
     atvTotal,
     total: lodgingTotal + atvTotal,
-    usesWeeklyRate: Boolean(rvRate?.fullHookup && weeklyBlocks > 0),
+    usesWeeklyRate: weeklyBlocks > 0,
   };
 }

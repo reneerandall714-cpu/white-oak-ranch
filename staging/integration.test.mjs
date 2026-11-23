@@ -251,7 +251,7 @@ test('submission is pending, quoted by server, idempotent and does not hold inve
   const booking = await admin.from('ranch_reservations').select('id,total,status,nightly_rate').eq('id', approved.data[0].reservation_id).single();
   assert.ifError(booking.error);
   assert.equal(Number(booking.data.total), 275);
-  assert.equal(Number(booking.data.nightly_rate), 50);
+  assert.equal(Number(booking.data.nightly_rate), 45);
   assert.equal(booking.data.status, 'PENDING');
   const token = await admin.from('ranch_booking_requests').select('checkout_token')
     .eq('id', first.data[0].request_id).single();
@@ -608,7 +608,7 @@ test('an open balance link blocks cancellation and a late payment requires revie
 
 test('day pass server price and payment status use owner settings', async () => {
   assert.ifError((await admin.from('ranch_payment_settings').update({
-    day_pass_enabled: true, day_pass_primary_cents: 1500,
+    day_pass_enabled: true, day_pass_primary_cents: 1000,
     day_pass_additional_cents: 1000, atv_day_cents: 5000,
   }).eq('id', true)).error);
   const prepared = await admin.rpc('ranch_prepare_day_pass', {
@@ -616,7 +616,7 @@ test('day pass server price and payment status use owner settings', async () => 
     p_visit_date: datePlus(3), p_additional: 2, p_atv: true,
   });
   assert.ifError(prepared.error);
-  assert.equal(prepared.data[0].amount_cents, 8500);
+  assert.equal(prepared.data[0].amount_cents, 8000);
   const paymentId = prepared.data[0].payment_id;
   const row = await admin.from('ranch_payments').select('day_pass_id').eq('id', paymentId).single();
   dayPasses.push(row.data.day_pass_id);
@@ -627,7 +627,7 @@ test('day pass server price and payment status use owner settings', async () => 
   assert.ifError((await admin.rpc('ranch_record_square_payment', {
     p_event_id: 'test:' + runId + ':day-pass', p_event_type: 'payment.updated',
     p_order_id: 'test-' + runId + '-day-pass', p_square_payment_id: 'pay-' + runId + '-day-pass',
-    p_amount_cents: 8500, p_status: 'COMPLETED', p_receipt_url: null, p_receipt_number: null,
+    p_amount_cents: 8000, p_status: 'COMPLETED', p_receipt_url: null, p_receipt_number: null,
   })).error);
   const pass = await admin.from('ranch_day_pass_orders').select('status').eq('id', row.data.day_pass_id).single();
   assert.equal(pass.data.status, 'PAID');
@@ -658,7 +658,7 @@ test('expired day pass link cancels the pass; delayed payment is flagged', async
     p_event_id: 'test:' + runId + ':late-pass', p_event_type: 'payment.updated',
     p_order_id: 'test-' + runId + '-late-pass',
     p_square_payment_id: 'pay-' + runId + '-late-pass',
-    p_amount_cents: 1500, p_status: 'COMPLETED',
+    p_amount_cents: 1000, p_status: 'COMPLETED',
     p_receipt_url: null, p_receipt_number: null,
   });
   assert.ifError(late.error); assert.equal(late.data, 'late_day_pass_payment');

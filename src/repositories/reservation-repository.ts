@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { type RVServiceName } from '../data/ranchConfig';
-import { calculateLiveStayPricing, canSaveLiveReservationPricing } from '../data/liveReservationPricing';
+import { calculateStaffStayPricing, canSaveLiveReservationPricing } from '../data/liveReservationPricing';
 import { LIVE_WEEKLY_RESERVATION_PRICING_ENABLED } from '../constants/feature-flags';
 import {
   buildReservationInsert,
@@ -192,7 +192,7 @@ export async function createStaffReservation(
     return { reservation: null, error: 'invalid_draft' };
   }
 
-  const pricing = calculateLiveStayPricing({
+  const pricing = calculateStaffStayPricing({
     stayType: draft.stayType,
     rvService: draft.stayType === 'RV Site' ? draft.rvService : undefined,
     nights: actualNights,
@@ -238,7 +238,7 @@ export async function updateStaffReservation(
   const arrival = Date.parse(`${draft.arrival}T00:00:00Z`);
   const departure = Date.parse(`${draft.departure}T00:00:00Z`);
   const actualNights = (departure - arrival) / 86_400_000;
-  const pricing = calculateLiveStayPricing({
+  const pricing = calculateStaffStayPricing({
     stayType: draft.stayType,
     rvService: draft.stayType === 'RV Site' ? draft.rvService : undefined,
     nights: actualNights,

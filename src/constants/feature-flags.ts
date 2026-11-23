@@ -5,8 +5,8 @@ export const LIVE_RESERVATIONS_ENABLED = true;
 
 export const LIVE_RESERVATION_WRITES_ENABLED = true;
 
-// Enabled after verifying the applied Deluxe-only ranch_total_matches migration.
-// Other RV weekly totals remain unavailable to live staff creation.
+// The existing backend supports the Deluxe weekly total. No-hookup weekly
+// staff writes also require verified website rates on the target database.
 export const LIVE_WEEKLY_RESERVATION_PRICING_ENABLED = true;
 
 // Enabled after remote migration 20261103005539 passed anonymous API tests.
@@ -18,6 +18,7 @@ export const PUBLIC_AVAILABILITY_ENABLED = true;
 // Square Sandbox remains off until an isolated backend, signed webhook, and
 // expiration reconciliation have been exercised with synthetic payments.
 export const SQUARE_SANDBOX_CHECKOUT_ENABLED = STAGING_BOOKING_REQUESTS_ENABLED
+  && process.env.EXPO_PUBLIC_WEBSITE_RATES_VERIFIED === 'true'
   && process.env.EXPO_PUBLIC_SQUARE_SANDBOX_VERIFIED === 'true';
 export const CUSTOMER_REQUEST_SUBMISSION_ENABLED = SQUARE_SANDBOX_CHECKOUT_ENABLED;
 export const STAFF_BOOKING_REQUESTS_ENABLED = SQUARE_SANDBOX_CHECKOUT_ENABLED;

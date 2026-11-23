@@ -16,8 +16,8 @@ import {
   isValidStayRange,
   parseDateInput,
 } from '../data/reservationdata';
-import { calculateStayPricing, RANCH_CONFIG } from '../data/ranchConfig';
-import { calculateLiveStayPricing, canSaveLiveReservationPricing } from '../data/liveReservationPricing';
+import { RANCH_CONFIG } from '../data/ranchConfig';
+import { calculateStaffStayPricing, canSaveLiveReservationPricing } from '../data/liveReservationPricing';
 import { listStaffInventory, type RanchUnit } from '../repositories/inventory-repository';
 import {
   checkStaffUnitAvailability,
@@ -106,7 +106,7 @@ export default function StaffNewReservationScreen() {
       (1000 * 60 * 60 * 24));
   }, [arrival, departure]);
 
-  const pricing = useMemo(() => calculateLiveStayPricing({
+  const pricing = useMemo(() => calculateStaffStayPricing({
     stayType,
     rvService,
     nights,
@@ -276,7 +276,7 @@ export default function StaffNewReservationScreen() {
             <>
               <Text style={styles.label}>RV SERVICE</Text>
               {RV_SERVICES.map((option) => (
-                <ChoiceButton key={option} label={`${option} • $${calculateStayPricing({ stayType: 'RV Site', rvService: option, nights: 1 }).nightlyRate}/night`} selected={rvService === option} onPress={() => setRvService(option)} />
+                <ChoiceButton key={option} label={`${option} • $${calculateStaffStayPricing({ stayType: 'RV Site', rvService: option, nights: 1 }).nightlyRate}/night`} selected={rvService === option} onPress={() => setRvService(option)} />
               ))}
             </>
           )}
@@ -327,7 +327,7 @@ export default function StaffNewReservationScreen() {
           {pricing.remainingNights > 0 && <Text style={styles.summaryLine}>{pricing.remainingNights} night{pricing.remainingNights === 1 ? '' : 's'} @ ${pricing.nightlyRate}: ${pricing.remainingNightlyTotal}</Text>}
           {atvAccess && <Text style={styles.summaryLine}>Overnight ATV / SxS: ${pricing.atvTotal}</Text>}
           {stayType === 'RV Site' && rvService !== 'Deluxe' && nights >= 7 && <Text style={styles.warningText}>Parking Only and Electric + Water weekly offers are demo-only. Live bookings use the nightly rate for every night.</Text>}
-          {!livePricingAvailable && <Text style={styles.warningText}>Only Deluxe/full-hookup weekly totals can be saved live. This service's weekly quote remains demo-only.</Text>}
+          {!livePricingAvailable && <Text style={styles.warningText}>This weekly rate is unavailable on the connected database.</Text>}
           <Text style={styles.total}>Total ${pricing.total}</Text>
         </View>
 

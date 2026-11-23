@@ -22,9 +22,9 @@ export default function PricingSettingsScreen() {
   const [saved, setSaved] = useState(false);
 
   const rvRates: RateItem[] = [
-    { id: '1', label: 'Parking Only', value: `$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights (demo-only; live uses nightly)` },
-    { id: '2', label: 'Electric + Water', value: `$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.electricWater.weekly}/7 nights (demo-only; live uses nightly)` },
-    { id: '3', label: 'Full Hookup (Deluxe service)', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights (live supported)` },
+    { id: '1', label: 'Parking Only', value: `$${RANCH_CONFIG.pricing.rv.parkingOnly.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.parkingOnly.weekly}/7 nights (website rate)` },
+    { id: '2', label: 'Electric + Water', value: `$${RANCH_CONFIG.pricing.rv.electricWater.nightly}/night`, note: 'Nightly website rate' },
+    { id: '3', label: 'Full Hookup (Deluxe service)', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: `$${RANCH_CONFIG.pricing.rv.deluxe.weekly}/7 nights` },
     { id: '4', label: 'Deluxe + Wi-Fi', value: `$${RANCH_CONFIG.pricing.rv.deluxe.nightly}/night`, note: 'Same verified Deluxe service' },
   ];
 
@@ -36,7 +36,7 @@ export default function PricingSettingsScreen() {
   ];
 
   const accessRates: RateItem[] = [
-    { id: '1', label: 'Primary Day Pass', value: '$15' },
+    { id: '1', label: 'Primary Day Pass', value: `$${RANCH_CONFIG.pricing.dayPass.primary}` },
     { id: '2', label: 'Additional Day Pass', value: '$10' },
     { id: '3', label: 'ATV / SxS Day Access', value: '$50', note: 'Proposed' },
     { id: '4', label: 'ATV / SxS Overnight Access', value: '$75/stay' },
@@ -52,14 +52,12 @@ export default function PricingSettingsScreen() {
     {
       id: '1',
       label: 'Rental RV • Sleeps 4–5',
-      value: '$75/night',
-      note: '$99 events/holidays',
+      value: `$${RANCH_CONFIG.pricing.rentalRV.small.normal}/night`,
     },
     {
       id: '2',
       label: 'Rental RV • Sleeps 6–8',
-      value: '$99/night',
-      note: '$125 events/holidays',
+      value: `$${RANCH_CONFIG.pricing.rentalRV.large.normal}/night`,
     },
   ];
 
