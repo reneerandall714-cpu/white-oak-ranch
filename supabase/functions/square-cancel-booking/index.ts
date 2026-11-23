@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
-import { admin, cors, ensureLink, json, reconcilePayment, rpc, square, squareConfig, staffFromRequest } from '../_shared/square.ts';
+import { admin, cors, ensureLink, json, reconcilePayment, rpc, square, squareConfig, staffFromRequest, type Prepared } from '../_shared/square.ts';
 
 // Cancellation only releases inventory after Square has closed any balance link
 // and every recorded charge has been fully refunded.
@@ -23,12 +23,13 @@ Deno.serve(async (req) => {
     }
     let balance = payments.data?.find((payment) => payment.phase === 'BALANCE');
     if (balance && ['CREATED', 'OPEN', 'FAILED', 'EXPIRED'].includes(balance.status)) {
-      // A timed-out create request might have created a Square link without
-      // attaching it locally. Square's payment ID is the idempotency key.
+      // Replay the same checkout payload and idempotency key if Square may have
+      // created a link before the response was lost or the local attach failed.
       if (!balance.square_link_id && balance.status !== 'EXPIRED') {
-        await ensureLink({ payment_id: balance.id, amount_cents: balance.amount_cents,
-          email: null, label: 'Reservation balance cancellation recovery',
-          checkout_url: null, square_order_id: null });
+        const [prepared] = await rpc<Prepared[]>('ranch_prepare_balance_payment', {
+          p_request_id: requestId,
+        });
+        await ensureLink(prepared);
         const refreshed = await admin.from('ranch_payments').select('*').eq('id', balance.id).single();
         if (refreshed.error) throw refreshed.error;
         balance = refreshed.data;
